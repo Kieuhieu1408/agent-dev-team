@@ -1,0 +1,42 @@
+{
+  "name": "agent-dev-team",
+  "version": "1.0.0",
+  "description": "Terminal-First Multi-Agent Orchestrator – Điều phối đội ngũ AI Agent và quản lý các Terminal độc lập trên máy cá nhân",
+  "main": "dist/cli.js",
+  "bin": {
+    "devteam": "./dist/cli.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "claude-cli",
+    "pty",
+    "multi-agent",
+    "langgraph",
+    "terminal"
+  ],
+  "author": "hieukq",
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "@langchain/core": "^1.2.17",
+    "@langchain/langgraph": "^1.4.21",
+    "@langchain/openai": "^1.6.2",
+    "chalk": "^6.0.1",
+    "commander": "^15.0.0",
+    "dotenv": "^18.0.7",
+    "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
