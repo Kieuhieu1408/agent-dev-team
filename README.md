@@ -7,6 +7,8 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue.svg)](https://www.typescriptlang.org/)
 [![LangGraph](https://img.shields.io/badge/Orchestrator-LangGraph-orange.svg)](https://github.com/langchain-ai/langgraphjs)
 
+![devteam Terminal Demo](assets/demo.png)
+
 ---
 
 ## 🎯 Vấn đề Giải quyết (The Pain Point)
@@ -27,16 +29,17 @@ Khi sử dụng AI (như Claude CLI / Cursor) để lập trình, các lập tr�
 
 ## 💡 Điểm Đột Phá Cốt Lõi
 
-### 1. Multi-Terminal Isolation (Quản lý các Terminal độc lập trên máy)
-Hệ thống sử dụng **Pseudo-Terminal (PTY)** hoặc **Process Pool** để spawn và giám sát các phiên terminal chạy ngầm độc lập trên máy cá nhân của bạn:
-*   **Terminal 1 (Dev Worker):** Chạy `claude CLI` để phân tích kiến trúc, refactor, viết mã nguồn.
-*   **Terminal 2 (Test & Build Runner):** Chạy lệnh kiểm thử (`mvn test`, `gradle test`, `npm test`, `pytest`) hoàn toàn độc lập, không block terminal chính.
-*   **Terminal 3 (Watcher / Service):** Chạy dev-server hoặc linter ngầm khi cần.
+### 1. Multi-Terminal Sub-Agent Isolation (Hạm đội Sub-Agents trên các Terminal độc lập)
+Hệ thống sử dụng **Pseudo-Terminal (PTY)** để spawn và điều phối một hạm đội **Claude Code CLI Sub-Agents** chạy ngầm độc lập trên máy cá nhân:
+*   **Terminal 1 (Explorer / Auditor Agent):** Điều phối `claude CLI` tự động bung toàn bộ công cụ (`ripgrep`, `ast-grep`, `ViewTool`, `BashTool`) để khảo sát kiến trúc, review convention, tìm bug nghiệp vụ, audit concurrency & race condition mà không cần con người copy/paste code.
+*   **Terminal 2 (Developer Agent):** Điều phối `claude CLI` độc lập để phân tích kiến trúc, refactor, viết mã nguồn và unit test theo nhiệm vụ.
+*   **Terminal 3 (Test Runner & Verifier):** Chạy lệnh kiểm thử (`mvn test`, `gradle test`, `npm test`, `pytest`) hoàn toàn độc lập, không block terminal chính.
+*   **Terminal 4 (Watcher / Background Service):** Chạy dev-server hoặc linter ngầm khi cần.
 
-### 2. Centralized State Management (Quản lý trạng thái tập trung)
-Toàn bộ tiến trình làm việc được quản lý bằng một **State Machine**:
+### 2. Centralized State Management (Quản lý trạng thái & Ngữ cảnh tập trung)
+Toàn bộ tiến trình làm việc được quản lý bằng một **Master State Machine**:
 `IDLE` ➔ `PLANNING` ➔ `CODING` ➔ `RUNNING_TEST` ➔ `AUTO_FIXING` ➔ `DONE`.
-Mọi trạng thái, nhiệm vụ (`tasks/*.md`) và logs đều được lưu trữ nhất quán, cho phép tạm dừng, phục hồi và kiểm soát an toàn (Human-in-the-Loop).
+Mọi trạng thái, nhiệm vụ (`tasks/*.md`), lịch sử hội thoại đa lượt và logs đều được lưu trữ nhất quán, cho phép tạm dừng, phục hồi và kiểm soát an toàn (Human-in-the-Loop).
 
 ### 3. Vòng lặp Tự sửa lỗi Khép kín (Closed-Loop Self-Healing)
 Khi Terminal Test bắt được exit code khác 0 hoặc stacktrace lỗi:
@@ -49,38 +52,38 @@ Khi Terminal Test bắt được exit code khác 0 hoặc stacktrace lỗi:
 ## 🏗️ Kiến trúc Hệ thống (Architecture)
 
 ```
-                            ┌───────────────────────────────────┐
-                            │    BẠN (Gõ lệnh từ Terminal)      │
-                            │  $ devteam run "Thêm tính năng X" │
-                            └─────────────────┬─────────────────┘
-                                              │
-                                              ▼
-                    ┌───────────────────────────────────────────────────┐
-                    │            AGENT-DEV-TEAM ORCHESTRATOR            │
-                    │                                                   │
-                    │  • LangGraph State Engine (Quản lý trạng thái)    │
-                    │  • Artifact-Driven Memory (.devteam/tasks/*.md)   │
-                    │  • Event Bus & Log Parser                         │
-                    └─────────┬───────────────────────────────┬─────────┘
-                              │                               │
-           ┌──────────────────▼──────────┐         ┌──────────▼──────────────┐
-           │     TERMINAL 1 (Worker)     │         │   TERMINAL 2 (Verifier) │
-           │     Điều khiển Claude CLI   │         │   Trình chạy Test/Build │
-           │                             │         │                         │
-           │ • Đọc kế hoạch & code       │         │ • Chạy test độc lập     │
-           │ • Tự động nhận log lỗi để   │◄─Event──│ • Bắt stderr/fail test  │
-           │   sửa sai (Self-healing)    │  FixBug │ • Thông báo State Engine│
-           └─────────────────────────────┘         └─────────────────────────┘
+                       🧑‍💻 CON NGƯỜI (Terminal CLI: devteam)
+                                      │
+                                      ▼
+             ┌─────────────────────────────────────────────────────────┐
+             │            🏛️ MASTER AGENT ORCHESTRATOR                 │
+             │                                                         │
+             │  • LangGraph State Engine (Quản lý trạng thái & Graph)  │
+             │  • Multi-turn Session Memory (Ghi nhớ ngữ cảnh đối thoại)│
+             │  • PO & Architect (Phân rã Master Plan & Tasks)         │
+             │  • Human-in-the-Loop & Guardrails (Kiểm duyệt an toàn)  │
+             └────────────────────────┬────────────────────────────────┘
+                                      │ Điều phối qua PTYManager
+        ┌─────────────────────────────┼─────────────────────────────┐
+        ▼                             ▼                             ▼
+ 🖥️ TERMINAL 1 (Explorer)      🖥️ TERMINAL 2 (Dev)          🖥️ TERMINAL 3 (Verifier)
+ [Claude Code CLI Sub-Agent]   [Claude Code CLI Sub-Agent]   [Test Runner Process]
+                                                            
+ • Tự do dùng ripgrep, view    • Đọc kế hoạch & code         • Chạy test độc lập
+ • Audit nghiệp vụ & race cond • Refactor & tạo unit test    • Bắt stderr & fail test
+ • Xuất báo cáo sâu            • Nhận log lỗi để tự sửa ◄────┤ Bắn Event Self-Healing
 ```
 
 ---
 
 ## 👥 Đội ngũ Agent Ảo (Virtual Dev Team)
 
+*   🏛️ **Master Agent (Supervisor / Orchestrator):** Tiếp nhận yêu cầu của người dùng, duy trì ngữ cảnh đối thoại đa lượt, phân tách task và chỉ đạo các Sub-Agent terminal.
+*   🔍 **Explorer & Security Auditor (Claude Code CLI Sub-Agent):** Tự động bung công cụ CLI (ripgrep, ast-grep, view) để đọc hiểu dự án, review coding convention, tìm bug nghiệp vụ ngân hàng, race condition và ngoại lệ sai lệch tiền.
 *   📋 **Product Owner (PO):** Phân tích yêu cầu cấp cao, chia nhỏ thành các nhiệm vụ cụ thể (`tasks/*.md`).
-*   🏛️ **Solution Architect (SA):** Thiết kế kiến trúc kỹ thuật, interface, quy chuẩn mã nguồn.
-*   💻 **Developer (Dev Agent):** Điều khiển `claude CLI` qua PTY để hiện thực hóa mã nguồn.
-*   🧪 **Tester (QA Agent):** Kích hoạt terminal kiểm thử, phân tích log lỗi và gửi phản hồi cho Dev nếu fail.
+*   📐 **Solution Architect (SA):** Thiết kế kiến trúc kỹ thuật, interface, quy chuẩn mã nguồn.
+*   💻 **Developer (Dev Sub-Agent - Claude Code CLI):** Nhận task và trực tiếp viết mã nguồn, sửa bug trên terminal PTY ngầm.
+*   🧪 **Tester (QA Agent & Test Runner):** Kích hoạt terminal kiểm thử, phân tích log lỗi và gửi phản hồi cho Dev Sub-Agent tự sửa.
 
 ---
 

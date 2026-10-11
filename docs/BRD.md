@@ -26,10 +26,11 @@ Hiện nay, khi lập trình viên sử dụng AI CLI (như Claude Code):
     *   Từng nhiệm vụ chi tiết được ghi vào các living documents (`.devteam/tasks/task_XXX.md`).
     *   Hệ thống đồ thị (LangGraph) đọc trạng thái để biết chính xác task đang ở bước nào (TODO, IN_PROGRESS, TESTING, BUG_FIXING, DONE) nhằm điều phối luồng mà không làm phình context window của LLM.
 
-### FR2. Quản lý đa Terminal độc lập (Multi-Terminal Process Isolation)
-*   **Mô tả:** Hệ thống phải có khả năng khởi tạo, giám sát và điều khiển nhiều phiên terminal (PTY) ngầm chạy song song trên máy cục bộ của người dùng.
+### FR2. Quản lý đa Terminal Sub-Agent độc lập (Multi-Terminal Sub-Agent Isolation)
+*   **Mô tả:** Hệ thống quản lý hạm đội các phiên terminal (PTY) ngầm chạy song song trên máy cục bộ, điều phối các **Sub-Agent độc lập (Claude Code CLI)** cho từng vai trò chuyên biệt:
 *   **Chi tiết:**
-    *   **Dev Worker Terminal:** Chạy tiến trình `claude CLI`, nhận lệnh và chỉnh sửa mã nguồn.
+    *   **Explorer / Auditor Terminal:** Chạy `claude CLI` ở vai trò Explorer/Auditor, tận dụng toàn bộ công cụ (`ripgrep`, `ast-grep`, `ViewTool`, `BashTool`) của Claude Code để tự động điều tra, đọc hiểu kiến trúc, review coding convention, tìm bug nghiệp vụ và audit bảo mật/concurrency.
+    *   **Dev Worker Terminal:** Chạy `claude CLI` ở vai trò Developer, nhận lệnh và chỉnh sửa mã nguồn.
     *   **Test Runner Terminal:** Chạy độc lập các lệnh build/test của dự án (`mvn test`, `gradle test`, `npm test`, `pytest`, `cargo test`...) mà không block terminal của Dev.
     *   **Background Service Terminal (Tuỳ chọn):** Quản lý dev server hoặc file watcher ngầm khi cần.
     *   Các terminal hoạt động độc lập, không xung đột I/O với terminal chính của người dùng.
@@ -45,12 +46,14 @@ Hiện nay, khi lập trình viên sử dụng AI CLI (như Claude Code):
         *   Sau khi Dev xác nhận đã sửa, tự động kích hoạt Test Terminal chạy lại kiểm thử.
     *   Cơ chế Circuit Breaker: Giới hạn số lần thử lại (ví dụ: tối đa 3-5 lần). Nếu vượt ngưỡng, chuyển sang trạng thái cảnh báo người dùng.
 
-### FR4. Điều phối Đội ngũ Đa Tác tử (Multi-Agent Team Orchestration)
-*   **Mô tả:** Phân chia trách nhiệm rõ ràng giữa các vai trò trong một nhóm phát triển phần mềm:
-    *   **Product Owner (PO):** Tiếp nhận prompt của người dùng, phân tích và chia nhỏ thành danh sách task cụ thể.
+### FR4. Điều phối Đội ngũ Đa Tác tử (Master-Worker Multi-Agent Orchestration)
+*   **Mô tả:** Phân chia trách nhiệm rõ ràng theo mô hình **Master Agent (Chỉ huy) ➔ Sub-Agent Fleet (Thực thi)**:
+    *   **Master Agent (Supervisor / Orchestrator):** Duy trì bộ nhớ ngữ cảnh hội thoại đa lượt, phân loại ý định, làm việc trực tiếp với con người (HITL) và chỉ đạo các Sub-Agent terminal.
+    *   **Explorer & Security Auditor (Claude Code CLI Sub-Agent):** Tự động bung công cụ CLI khảo sát dự án, phát hiện lỗi race condition, idempotency, exception swallowing và sai lệch tiền.
+    *   **Product Owner (PO):** Tiếp nhận prompt của người dùng, phân tích và chia nhỏ thành danh sách task cụ thể (`tasks/*.md`).
     *   **Solution Architect (SA):** Định nghĩa kiến trúc, interface và các quy chuẩn kỹ thuật.
-    *   **Developer (Dev Agent):** Thao tác trên Dev Terminal để viết code theo thiết kế.
-    *   **Tester (QA Agent):** Lập kế hoạch kiểm thử, kích hoạt Test Terminal và đánh giá kết quả kiểm thử.
+    *   **Developer (Dev Sub-Agent - Claude Code CLI):** Thao tác trên Dev Terminal để viết code theo thiết kế.
+    *   **Tester (QA Agent & Test Runner):** Lập kế hoạch kiểm thử, kích hoạt Test Terminal và đánh giá kết quả kiểm thử.
 
 ### FR5. An toàn và Kiểm soát Người dùng (HITL & Guardrails)
 *   **Mô tả:** Đảm bảo an toàn cho máy tính cá nhân của người dùng, ngăn chặn các lệnh nguy hiểm.

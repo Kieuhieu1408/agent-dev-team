@@ -14,8 +14,10 @@ import { buildDevTeamGraph } from './graph/builder.js';
 import { HITL } from './core/hitl.js';
 import { cliCompleter, historyManager } from './core/completer.js';
 import { TokenTracker } from './core/token-tracker.js';
+import { BaseMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
 
 let activeRl: readline.Interface | null = null;
+let sessionMessages: BaseMessage[] = [];
 
 export function getPromptString(): string {
   const currentPath = settings.get().projectPath;
@@ -35,7 +37,7 @@ export function updatePrompt(): void {
   }
 }
 
-function printStatus(): void {
+function printStatus(full: boolean = false): void {
   const cfg = settings.get();
   const stateMgr = new StateManager(cfg.projectPath);
   const plan = stateMgr.getPlan();
@@ -47,21 +49,31 @@ function printStatus(): void {
 
   Logger.divider();
   console.log(chalk.bold.cyan('📊 TRẠNG THÁI HIỆN TẠI (SYSTEM STATUS):'));
-  console.log(`  • ${chalk.bold('File Config:')}   ${chalk.dim(cfg.configFilePath)}`);
-  console.log(`  • ${chalk.bold('Provider:')}      ${chalk.green(cfg.provider)} (${cfg.providerUrl})`);
+
+  if (full) {
+    console.log(`  • ${chalk.bold('File Config:')}   ${chalk.dim(cfg.configFilePath)}`);
+    console.log(`  • ${chalk.bold('Provider:')}      ${chalk.green(cfg.provider)} (${cfg.providerUrl})`);
+  }
+
   console.log(`  • ${chalk.bold('Model:')}         ${modelDisplay}`);
-  console.log(
-    `  • ${chalk.bold('API Key:')}       ${
-      cfg.apiKey ? chalk.green('✓ Đã cấu hình (' + cfg.apiKey.slice(0, 7) + '...)') : chalk.red('✖ Chưa cấu hình')
-    }`
-  );
-  console.log(
-    `  • ${chalk.bold('Human-in-Loop:')} ${
-      cfg.autoConfirm
-        ? chalk.yellow('✖ TẮT (Tự động duyệt mọi bước)')
-        : chalk.green('✓ BẬT (Xác nhận trước khi Dev & Test)')
-    }`
-  );
+
+  if (full) {
+    console.log(
+      `  • ${chalk.bold('API Key:')}       ${
+        cfg.apiKey ? chalk.green('✓ Đã cấu hình (' + cfg.apiKey.slice(0, 7) + '...)') : chalk.red('✖ Chưa cấu hình')
+      }`
+    );
+    console.log(
+      `  • ${chalk.bold('Human-in-Loop:')} ${
+        cfg.autoConfirm
+          ? chalk.yellow('✖ TẮT (Tự động duyệt mọi bước)')
+          : chalk.green('✓ BẬT (Xác nhận trước khi Dev & Test)')
+      }`
+    );
+  } else if (!cfg.apiKey) {
+    console.log(`  • ${chalk.bold('API Key:')}       ${chalk.red('✖ Chưa cấu hình (Dùng /api-key sk-...)')}`);
+  }
+
   const isHome = settings.isHomeDirectory();
   const projectDisplay = isHome
     ? `${chalk.yellowBright(cfg.projectPath)} ${chalk.red.bold('⚠️ (Thư mục cá nhân ~ | Cần dùng /project để chọn dự án!)')}`
@@ -69,26 +81,30 @@ function printStatus(): void {
 
   console.log(`  • ${chalk.bold('Dự án (CWD):')}   ${projectDisplay}`);
 
-  const tracker = TokenTracker.getInstance();
-  const sessionMetrics = tracker.getSessionMetrics();
-  const sessionCost = tracker.calculateCost(sessionMetrics.promptTokens, sessionMetrics.completionTokens);
-  const pricing = tracker.getPricing();
-  const ctxUsed = sessionMetrics.totalTokens;
-  const ctxLimit = pricing.contextWindow;
-  const ctxPct = ((ctxUsed / ctxLimit) * 100).toFixed(2);
+  if (full) {
+    const tracker = TokenTracker.getInstance();
+    const sessionMetrics = tracker.getSessionMetrics();
+    const sessionCost = tracker.calculateCost(sessionMetrics.promptTokens, sessionMetrics.completionTokens);
+    const pricing = tracker.getPricing();
+    const ctxUsed = sessionMetrics.totalTokens;
+    const ctxLimit = pricing.contextWindow;
+    const ctxPct = ((ctxUsed / ctxLimit) * 100).toFixed(2);
 
-  console.log(
-    `  • ${chalk.bold('Token đã dùng:')}  ${chalk.bold.green(tracker.formatNumber(sessionMetrics.totalTokens))} tokens ` +
-      chalk.dim(`(${tracker.formatNumber(sessionMetrics.promptTokens)} prompt · ${tracker.formatNumber(sessionMetrics.completionTokens)} completion · ${sessionMetrics.callsCount} lượt gọi)`)
-  );
-  console.log(
-    `  • ${chalk.bold('Chi phí ước tính:')} ${chalk.bold.yellow(tracker.formatCost(sessionCost.costUSD, sessionCost.costVND))}`
-  );
-  console.log(
-    `  • ${chalk.bold('Context Window:')} ${chalk.green(`${tracker.formatTokensCompact(ctxUsed)} / ${tracker.formatTokensCompact(ctxLimit)} tokens`)} ` +
-      chalk.dim(`(${ctxPct}% đã dùng · Tình trạng: An toàn, không lo tràn context)`)
-  );
-  console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
+    console.log(
+      `  • ${chalk.bold('Token đã dùng:')}  ${chalk.bold.green(tracker.formatNumber(sessionMetrics.totalTokens))} tokens ` +
+        chalk.dim(`(${tracker.formatNumber(sessionMetrics.promptTokens)} prompt · ${tracker.formatNumber(sessionMetrics.completionTokens)} completion · ${sessionMetrics.callsCount} lượt gọi)`)
+    );
+    console.log(
+      `  • ${chalk.bold('Chi phí ước tính:')} ${chalk.bold.yellow(tracker.formatCost(sessionCost.costUSD, sessionCost.costVND))}`
+    );
+    console.log(
+      `  • ${chalk.bold('Context Window:')} ${chalk.green(`${tracker.formatTokensCompact(ctxUsed)} / ${tracker.formatTokensCompact(ctxLimit)} tokens`)} ` +
+        chalk.dim(`(${ctxPct}% đã dùng · Tình trạng: An toàn, không lo tràn context)`)
+    );
+    console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
+  } else if (plan.currentPhase !== 'IDLE') {
+    console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
+  }
 
   const activeTask = plan.tasks.find(
     (t) => t.status === 'IN_PROGRESS' || t.status === 'TESTING' || t.status === 'SELF_HEALING'
@@ -108,7 +124,7 @@ function printStatus(): void {
         `    ${statusTag} ${chalk.bold.yellow(s.name)} (PID: ${s.pid}) - ${s.command} ${s.args.slice(0, 3).join(' ')}`
       );
     }
-  } else {
+  } else if (full) {
     console.log(`  • ${chalk.bold('Terminals PTY:')}  ${chalk.dim('Chưa có terminal ngầm nào (IDLE)')}`);
   }
 
@@ -139,6 +155,7 @@ function printHelp(): void {
   console.log(`  ${chalk.yellow('/status')}                 : Xem cấu hình, model hiện tại, dự án và tiến độ`);
   console.log(`  ${chalk.yellow('/tokens | /cost')}         : Xem footer thống kê chi tiết token đã dùng & ước tính chi phí`);
   console.log(`  ${chalk.yellow('/tasks')}                  : Xem danh sách task chi tiết`);
+  console.log(`  ${chalk.yellow('/reports | /report')}      : Xem các tệp báo cáo khảo sát (.devteam/reports)`);
   console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test Runner)`);
   console.log(`\n${chalk.bold.cyan('💻 LỆNH TERMINAL TRỰC TIẾP (DIRECT SHELL COMMANDS):')}`);
   console.log(`  ${chalk.yellow('cd <thư_mục>')}            : Di chuyển thư mục (ví dụ: cd du-an-1, cd ~, cd ..)`);
@@ -187,6 +204,12 @@ async function runFeatureDev(intent: string): Promise<void> {
   isExecuting = true;
   TokenTracker.getInstance().startTurn();
 
+  // Record user message into multi-turn conversation memory
+  sessionMessages.push(new HumanMessage(intent));
+  if (sessionMessages.length > 20) {
+    sessionMessages = sessionMessages.slice(-20);
+  }
+
   try {
     const graph = buildDevTeamGraph();
     const result = await graph.invoke({
@@ -197,8 +220,12 @@ async function runFeatureDev(intent: string): Promise<void> {
       tasks: [],
       retryCount: 0,
       isComplete: false,
-      messages: [],
+      messages: sessionMessages,
     });
+
+    if (result.responseMessage) {
+      sessionMessages.push(new AIMessage(result.responseMessage));
+    }
 
     if (result.requestType === 'DEV') {
       Logger.divider();
@@ -479,6 +506,7 @@ export async function checkProjectIntent(input: string): Promise<boolean> {
 
   if (confirmed) {
     settings.setProjectPath(candidateDir);
+    sessionMessages = [];
     historyManager.addWord(folderName);
     historyManager.addWord(candidateDir);
     updatePrompt();
@@ -513,10 +541,12 @@ function isCommandKeyword(token: string): boolean {
     'tokens', 'token',
     'cost', 'estimate',
     'tasks',
+    'reports', 'report',
     'logs',
     'run',
     'help',
     'stop',
+    'reset', 'clear-context', 'new',
     'exit', 'quit', 'q', 'ẽit',
     'cat', 'config'
   ].includes(t);
@@ -528,6 +558,13 @@ export async function processCommandLine(line: string): Promise<boolean> {
 
   const lower = trimmed.toLowerCase();
   const normalizedCmd = lower.replace(/^\/+/, '');
+
+  // Reset / Clear Conversation Memory
+  if (normalizedCmd === 'reset' || normalizedCmd === 'clear-context' || normalizedCmd === 'new') {
+    sessionMessages = [];
+    Logger.success('Đã làm mới bộ nhớ hội thoại của DevTeam.');
+    return true;
+  }
 
   // Stop - always available even while executing
   if (normalizedCmd === 'stop') {
@@ -588,8 +625,9 @@ export async function processCommandLine(line: string): Promise<boolean> {
   }
 
   // Status
-  if (normalizedCmd === 'status') {
-    printStatus();
+  if (normalizedCmd === 'status' || normalizedCmd.startsWith('status ')) {
+    const isFull = trimmed.includes('full') || trimmed.includes('-v') || trimmed.includes('--all');
+    printStatus(isFull);
     return true;
   }
 
@@ -619,6 +657,31 @@ export async function processCommandLine(line: string): Promise<boolean> {
         if (t.lastError) {
           console.log(chalk.red(`  Lỗi gần nhất: ${t.lastError.slice(0, 150)}...`));
         }
+      }
+    }
+    return true;
+  }
+
+  // Reports
+  if (normalizedCmd === 'reports' || normalizedCmd === 'report') {
+    const cfg = settings.get();
+    const reportsDir = path.join(cfg.projectPath, '.devteam', 'reports');
+    if (!fs.existsSync(reportsDir)) {
+      Logger.info('Chưa có tệp báo cáo nào trong thư mục .devteam/reports.');
+    } else {
+      const files = fs.readdirSync(reportsDir).filter((f) => f.endsWith('.md')).sort().reverse();
+      if (files.length === 0) {
+        Logger.info('Chưa có tệp báo cáo nào trong thư mục .devteam/reports.');
+      } else {
+        console.log(chalk.bold.cyan(`\n📑 CÁC TỆP BÁO CÁO TRONG DỰ ÁN (.devteam/reports/):`));
+        for (const file of files) {
+          const filePath = path.join(reportsDir, file);
+          const stat = fs.statSync(filePath);
+          const isLatest = file === 'LATEST_EXPLORATION_REPORT.md';
+          const tag = isLatest ? chalk.green.bold(' [Mới nhất]') : '';
+          console.log(`  • ${chalk.bold.yellow(file)}${tag} ${chalk.dim(`(${stat.size} bytes · ${stat.mtime.toLocaleString('vi-VN')})`)}`);
+        }
+        console.log(chalk.dim(`\n  Mẹo: Bạn có thể xem nhanh bằng lệnh: cat .devteam/reports/LATEST_EXPLORATION_REPORT.md\n`));
       }
     }
     return true;
@@ -721,6 +784,7 @@ export async function processCommandLine(line: string): Promise<boolean> {
       const rawPath = tokens[i + 1];
       if (rawPath && !isCommandKeyword(rawPath)) {
         const resolved = settings.setProjectPath(rawPath);
+        sessionMessages = [];
         historyManager.addWord(path.basename(resolved));
         historyManager.addWord(rawPath);
         updatePrompt();
@@ -872,8 +936,9 @@ async function main() {
   const first = args[0];
 
   if (first === 'status') {
+    const isFull = args.includes('full') || args.includes('-v') || args.includes('--all');
     Logger.banner();
-    printStatus();
+    printStatus(isFull);
     return;
   }
 

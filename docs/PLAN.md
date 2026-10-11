@@ -14,13 +14,15 @@ Bạn là một **Senior AI & Systems Engineer (Node.js & TypeScript Expert)**. 
 
 Hệ thống hoạt động dựa trên các nguyên lý trọng tâm:
 1. **Terminal-First (Không cần GUI cồng kềnh):** Mọi thao tác điều khiển được thực hiện qua giao diện dòng lệnh (CLI/TUI) gọn nhẹ và mượt mà.
-2. **Multi-Terminal Process Isolation:** Quản lý nhiều pseudo-terminal (PTY) ngầm chạy song song trên máy người dùng:
-   * **Terminal 1 (Dev Worker):** Điều khiển `claude CLI` để phân tích và viết code.
-   * **Terminal 2 (Test Runner):** Thực thi các lệnh build/test độc lập (`npm test`, `mvn test`, `pytest`...) mà không làm nghẽn Terminal 1.
+2. **Master Agent ➔ Sub-Agent Fleet Architecture:**
+   * **Master Agent (LangGraph Orchestrator):** Tiếp nhận yêu cầu con người, lưu giữ bộ nhớ hội thoại đa lượt, phân tách Master Plan và điều khiển các Sub-Agents.
+   * **Terminal 1 (Explorer / Auditor Sub-Agent):** Điều phối `claude CLI` tự do dùng ripgrep, view file, git để khảo sát kiến trúc, review convention và audit bug nghiệp vụ.
+   * **Terminal 2 (Developer Sub-Agent):** Điều phối `claude CLI` để phân tích và viết code, tạo unit test.
+   * **Terminal 3 (Test Runner):** Thực thi các lệnh build/test độc lập (`npm test`, `mvn test`, `pytest`...) mà không làm nghẽn Terminal 1 & 2.
 3. **Centralized State Management:** Quản lý vòng đời tác vụ thông qua State Machine:
    `IDLE` ➔ `PLANNING` ➔ `DEV_CODING` ➔ `RUNNING_TEST` ➔ `SELF_HEALING` ➔ `VERIFIED` ➔ `DONE`.
    Lưu trữ tiến độ tại `.devteam/state.json` và `.devteam/tasks/task_XXX.md`.
-4. **Closed-Loop Self-Healing:** Khi Test Runner bắt được lỗi, Log Parser tự động trích xuất stacktrace và gửi thông tin lỗi sang Dev Worker để Claude CLI tự fix code cho tới khi pass.
+4. **Closed-Loop Self-Healing:** Khi Test Runner bắt được lỗi, Log Parser tự động trích xuất stacktrace và gửi thông tin lỗi sang Developer Sub-Agent để Claude CLI tự fix code cho tới khi pass.
 5. **Human-in-the-Loop (HITL) & Guardrails:** Tự động chặn các câu lệnh nguy hiểm và cho phép người dùng can thiệp khi cần thiết.
 
 ---
@@ -69,7 +71,8 @@ agent-dev-team/
 │   │   └── llm-factory.ts     # Khởi tạo LLM Provider
 │   ├── terminal/
 │   │   ├── pty-manager.ts     # Wrapper quản lý đa tiến trình pseudo-terminal
-│   │   ├── dev-worker.ts      # Quản lý terminal chạy Claude CLI
+│   │   ├── claude-worker.ts   # Quản lý các Claude Code CLI Sub-Agents (Explorer, Dev)
+│   │   ├── dev-worker.ts      # Kế thừa claude-worker, chạy Developer Sub-Agent
 │   │   └── test-runner.ts     # Quản lý terminal chạy test/build độc lập
 │   ├── watchers/
 │   │   └── log-parser.ts      # Phân tích log và trích xuất lỗi test

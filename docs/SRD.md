@@ -15,18 +15,19 @@
                                      |
                                      v
 +-------------------------------------------------------------------------+
-|                  State Manager & LangGraph Orchestrator                 |
+|             MASTER AGENT: State Manager & LangGraph Orchestrator        |
 |  - Trạng thái: IDLE | PLANNING | DEV_CODING | RUNNING_TEST | SELF_HEAL  |
+|  - Bộ nhớ hội thoại đa lượt: sessionMessages (BaseMessage[])            |
 |  - Quản lý Artifacts: .devteam/tasks/task_XXX.md                        |
-+-------------------+---------------------------------+-------------------+
-                    |                                 |
-                    v (Commands / Events)             v (Error Events)
-+------------------------------------+   +--------------------------------+
-|       DEV TERMINAL (Worker)        |   |     TEST TERMINAL (Runner)     |
-| - Tiến trình: node-pty (claude CLI)|   | - Tiến trình: node-pty/spawn   |
-| - Nhiệm vụ: Sinh code, refactor    |   | - Nhiệm vụ: Chạy mvn/npm/pytest|
-| - Nhận bug report để tự sửa        |   | - Bắt exit code & log lỗi      |
-+------------------------------------+   +--------------------------------+
++--------------------+-------------------+--------------------------------+
+                     |                   |                                |
+                     v                   v                                v
++------------------------+ +------------------------+ +-------------------+
+|  TERMINAL 1 (Explorer) | |   TERMINAL 2 (Dev)     | |TERMINAL 3 (Runner)|
+| - node-pty (claude CLI)| | - node-pty (claude CLI)| | - node-pty (test) |
+| - Tự do dùng ripgrep,  | | - Sinh code, refactor  | | - Chạy test dự án |
+|   view file để audit   | | - Nhận bug để tự sửa   | | - Bắt error log   |
++------------------------+ +------------------------+ +-------------------+
 ```
 
 ---
@@ -38,9 +39,12 @@
     *   Sử dụng thư viện `node-pty` để tạo các pseudo-terminal session độc lập với terminal hiện tại của người dùng.
     *   Cho phép spawn nhiều session cùng lúc với working directory trỏ tới thư mục dự án cần phát triển.
     *   Cung cấp API bất đồng bộ: `spawnSession(name, command, args, cwd)`, `writeToSession(name, input)`, `onOutput(name, callback)`, `killSession(name)`.
+*   **`ClaudeWorker.ts`:**
+    *   Lớp cơ sở quản lý các phiên Claude Code CLI Sub-Agent theo vai trò (`EXPLORER`, `DEVELOPER`, `AUDITOR`).
+    *   Tự động phát hiện binary `claude`, thiết lập môi trường `ANTHROPIC_BASE_URL` / `OPENAI_API_BASE` và `--dangerously-skip-permissions`.
+    *   Ghi nhận token tiêu thụ từ các Sub-Agents vào `TokenTracker`.
 *   **`DevWorker.ts`:**
-    *   Bọc một session PTY chuyên chạy lệnh `claude` (hoặc `claude -p "..."`).
-    *   Điều khiển tương tác với Claude CLI: gửi yêu cầu chỉnh sửa mã nguồn dựa trên mô tả task, kiểm tra khi nào Claude CLI hoàn thành lượt sinh code.
+    *   Kế thừa từ `ClaudeWorker`, chuyên trách vai trò Developer Sub-Agent để thực thi code và unit test.
 *   **`TestRunner.ts`:**
     *   Bọc một session PTY riêng biệt để thực thi lệnh build và kiểm thử của dự án (tự động nhận diện `npm test`, `mvn test`, `gradle test`, `pytest`, v.v.).
     *   Thu thập toàn bộ `stdout` và `stderr` mà không làm nghẽn tiến trình của DevWorker.
