@@ -116,8 +116,19 @@ class SettingsManager {
 
   private loadConfigFile(filePath: string): Partial<DevTeamConfigFile> {
     try {
-      if (fs.existsSync(filePath)) {
-        const raw = fs.readFileSync(filePath, 'utf-8');
+      let targetPath = filePath;
+      if (!fs.existsSync(targetPath)) {
+        const examplePath1 = path.join(path.dirname(filePath), '.config.example');
+        const examplePath2 = path.join(path.dirname(filePath), 'config.example.json');
+        if (fs.existsSync(examplePath1)) {
+          targetPath = examplePath1;
+        } else if (fs.existsSync(examplePath2)) {
+          targetPath = examplePath2;
+        }
+      }
+
+      if (fs.existsSync(targetPath)) {
+        const raw = fs.readFileSync(targetPath, 'utf-8');
         const parsed = JSON.parse(raw);
         return {
           provider: parsed.provider,
