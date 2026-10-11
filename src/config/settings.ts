@@ -10,6 +10,7 @@ export interface DevTeamConfigFile {
   provider: string;
   model: string;
   apiKey: string;
+  projectPath?: string;
 }
 
 export interface DevTeamConfig {
@@ -105,6 +106,7 @@ class SettingsManager {
     const model = saved.model || process.env.LLM_MODEL || 'gemini';
 
     const projectPath =
+      saved.projectPath ||
       process.env.TARGET_PROJECT_DIR ||
       process.cwd();
 
@@ -119,7 +121,7 @@ class SettingsManager {
       configFilePath: this.activeConfigPath,
     };
 
-    // If config file did not exist, write initial template with only provider, model, apiKey
+    // If config file did not exist, write initial template
     if (!fs.existsSync(this.activeConfigPath)) {
       this.saveConfig();
     }
@@ -149,6 +151,7 @@ class SettingsManager {
           model: parsed.model,
           // Support apiKey, aplkey, or api_key
           apiKey: parsed.apiKey || parsed.aplkey || parsed.api_key || '',
+          projectPath: parsed.projectPath || parsed.project_path,
         };
       }
     } catch {
@@ -159,11 +162,12 @@ class SettingsManager {
 
   public saveConfig(): void {
     try {
-      // Config file contains ONLY provider, model and apiKey as requested
+      // Update config file including projectPath so project state persists
       const fileContent: DevTeamConfigFile = {
         provider: this.config.provider,
         model: this.config.model,
         apiKey: this.config.apiKey,
+        projectPath: this.config.projectPath,
       };
       fs.writeFileSync(this.activeConfigPath, JSON.stringify(fileContent, null, 2), 'utf-8');
     } catch {
@@ -231,6 +235,7 @@ class SettingsManager {
     try {
       process.chdir(resolved);
     } catch {}
+    this.saveConfig();
     return resolved;
   }
 

@@ -1,5 +1,6 @@
 {
   "provider": "9router",
   "model": "gemini",
-  "apiKey": ""
+  "apiKey": "",
+  "projectPath": ""
 }

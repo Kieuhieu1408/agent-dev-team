@@ -7,6 +7,9 @@ export function routeAfterSupervisor(state: AgentState): string {
   if (state.requestType === 'EXPLORE') {
     return 'explore';
   }
+  if (state.requestType === 'CLARIFY') {
+    return 'clarify';
+  }
   return 'po';
 }
 

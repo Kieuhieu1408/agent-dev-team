@@ -3,7 +3,7 @@ import { BaseMessage } from '@langchain/core/messages';
 import { DevTeamPhase, TaskItem } from '../core/state-manager.js';
 import { TestResult } from '../terminal/test-runner.js';
 
-export type RequestType = 'CHAT' | 'EXPLORE' | 'DEV';
+export type RequestType = 'CHAT' | 'EXPLORE' | 'DEV' | 'CLARIFY';
 
 export const AgentStateAnnotation = Annotation.Root({
   intent: Annotation<string>(),

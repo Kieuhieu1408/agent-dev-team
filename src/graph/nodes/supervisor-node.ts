@@ -36,15 +36,30 @@ export async function supervisorNode(state: AgentState): Promise<Partial<AgentSt
     };
   }
 
+  // Fast-path pattern checks for vague/ambiguous inputs
+  const clarifyKeywords = [
+    'chưa rõ', 'không rõ', 'làm gì', 'thế nào', 'sao', 'sao thế',
+    'gì vậy', 'là sao', 'alo', 'ê', 'ơi'
+  ];
+  if (clarifyKeywords.some((k) => trimmed === k)) {
+    Logger.info('Ý định phân loại: [CLARIFY] Ý định chưa rõ ràng.');
+    return {
+      requestType: 'CLARIFY',
+      responseMessage: 'Tôi chưa rõ đây là gì, bạn hãy nói rõ ý định của mình. (Ví dụ: Bạn muốn trò chuyện, tìm hiểu dự án hiện tại, hay phát triển tính năng gì?)',
+      currentPhase: 'IDLE',
+    };
+  }
+
   const systemPrompt = `Bạn là một AI Supervisor / Intent Classifier cấp cao trong hệ thống Multi-Agent DevTeam.
-Nhiệm vụ của bạn là phân loại chính xác ý định (Intent) của người dùng vào 1 trong 3 nhóm:
+Nhiệm vụ của bạn là phân loại chính xác ý định (Intent) của người dùng vào 1 trong 4 nhóm:
 
 1. "CHAT": Trò chuyện xã giao, chào hỏi, chia sẻ, đặt câu hỏi chung chung không yêu cầu sửa đổi code, không yêu cầu viết tính năng mới, hoặc người dùng chỉ muốn đàm thoại ("hello", "tôi chỉ chat thôi", "bạn làm được gì").
 2. "EXPLORE": Người dùng muốn tìm hiểu, giải thích, khám phá kiến trúc, đọc hiểu mã nguồn hoặc cấu trúc của dự án hiện tại mà KHÔNG yêu cầu sửa đổi code ("dự án này có cấu trúc gì", "giải thích file index.ts", "tech stack của project").
 3. "DEV": Người dùng muốn phát triển tính năng mới, sửa lỗi, viết mã nguồn, tạo test, refactor, hoặc can thiệp kỹ thuật vào mã nguồn ("viết hàm tính giai thừa", "thêm login", "fix bug null pointer", "tạo file README").
+4. "CLARIFY": Người dùng nhập câu nói cụt lủn, mơ hồ, tối nghĩa, không nêu rõ hành động, hoặc ý định chưa rõ ràng ("chưa rõ", "dự án", "sao", "làm gì", "code", "dev").
 
 Hãy trả về DUY NHẤT một chuỗi JSON theo định dạng:
-{"type": "CHAT" | "EXPLORE" | "DEV", "reason": "Lý do ngắn gọn dưới 20 từ"}`;
+{"type": "CHAT" | "EXPLORE" | "DEV" | "CLARIFY", "reason": "Lý do ngắn gọn dưới 20 từ", "clarificationMessage": "Nếu type là CLARIFY, hãy viết câu ngắn hỏi rõ ý định"}`;
 
   const userPrompt = `Dự án: ${state.projectPath}
 Nội dung người dùng nhập: "${state.intent}"
@@ -63,6 +78,15 @@ Phân loại:`;
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       const type = (parsed.type || '').toUpperCase();
+      if (type === 'CLARIFY') {
+        const msg = parsed.clarificationMessage || 'Tôi chưa rõ đây là gì, bạn hãy nói rõ ý định của mình. (Ví dụ: Bạn muốn trò chuyện, tìm hiểu dự án hiện tại, hay phát triển tính năng gì?)';
+        Logger.info(`Ý định được AI xác định: [CLARIFY] - ${parsed.reason || ''}`);
+        return {
+          requestType: 'CLARIFY',
+          responseMessage: msg,
+          currentPhase: 'IDLE',
+        };
+      }
       if (type === 'CHAT' || type === 'EXPLORE' || type === 'DEV') {
         Logger.info(`Ý định được AI xác định: [${type}] - ${parsed.reason || ''}`);
         return {
@@ -73,6 +97,19 @@ Phân loại:`;
     }
   } catch (err: any) {
     Logger.warn(`Supervisor phân loại dự phòng: ${err.message}`);
+  }
+
+  // Fallback: If input is too short or doesn't have clear action verbs, ask to clarify
+  const devActionVerbs = ['tạo', 'viết', 'thêm', 'sửa', 'fix', 'xây dựng', 'refactor', 'build', 'add', 'create', 'update', 'delete', 'hàm', 'chức năng', 'tính năng'];
+  const hasDevVerb = devActionVerbs.some((v) => trimmed.includes(v));
+
+  if (!hasDevVerb && trimmed.split(/\s+/).length <= 3) {
+    Logger.info('Ý định mặc định: [CLARIFY] Yêu cầu ngắn/chưa rõ hành động.');
+    return {
+      requestType: 'CLARIFY',
+      responseMessage: 'Tôi chưa rõ đây là gì, bạn hãy nói rõ ý định của mình. (Ví dụ: Bạn muốn trò chuyện, tìm hiểu dự án hiện tại, hay phát triển tính năng gì?)',
+      currentPhase: 'IDLE',
+    };
   }
 
   // Fallback to DEV

@@ -364,6 +364,92 @@ export function executeShellPipeline(rawLine: string): boolean {
   return true;
 }
 
+export async function checkProjectIntent(input: string): Promise<boolean> {
+  const trimmed = input.trim();
+  const lower = trimmed.toLowerCase();
+
+  let candidateDir = '';
+  let remainingIntent = '';
+
+  // Pattern 1: starts with cd <folder> <natural language...> (e.g. "cd du-an-1 chúng ta phát triển dự án này")
+  if (lower.startsWith('cd ')) {
+    const afterCd = trimmed.slice(3).trim();
+    const tokens = afterCd.split(/\s+/);
+    if (tokens.length > 1) {
+      const possibleFolder = tokens[0].replace(/^['"]|['"]$/g, '');
+      const resolved = settings.resolveProjectPath(possibleFolder);
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        candidateDir = resolved;
+        remainingIntent = tokens.slice(1).join(' ').trim();
+      }
+    }
+  }
+
+  // Pattern 2: "chuyển sang / chuyển qua / phát triển / mở dự án <folder> [ý định]"
+  if (!candidateDir) {
+    const match = trimmed.match(
+      /^(?:chuyển\s+(?:sang|qua)|phát\s+triển|mở)\s+(?:dự\s+án\s+|project\s+)?([^\s]+)(?:\s+(.*))?$/i
+    );
+    if (match) {
+      const possibleFolder = match[1].replace(/^['"]|['"]$/g, '');
+      const resolved = settings.resolveProjectPath(possibleFolder);
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        candidateDir = resolved;
+        remainingIntent = (match[2] || '').trim();
+      }
+    }
+  }
+
+  // Pattern 3: Input is just a project name / folder path (e.g. "du-an-1" or "desktop/du-an-1")
+  if (!candidateDir) {
+    const tokens = trimmed.split(/\s+/);
+    // 1-2 words, doesn't start with slash, not a known shell command keyword
+    if (tokens.length <= 2 && !trimmed.startsWith('/') && !SHELL_COMMAND_NAMES.has(tokens[0].toLowerCase())) {
+      const resolved = settings.resolveProjectPath(trimmed.replace(/^['"]|['"]$/g, ''));
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        // Exclude root home directory
+        if (path.normalize(resolved) !== path.normalize(os.homedir())) {
+          candidateDir = resolved;
+          remainingIntent = '';
+        }
+      }
+    }
+  }
+
+  if (!candidateDir) {
+    return false;
+  }
+
+  const folderName = path.basename(candidateDir);
+
+  // Ask human confirmation
+  const confirmed = await HITL.askConfirmation(
+    `Bạn muốn phát triển dự án "${folderName}" (${candidateDir}) đúng không?`,
+    true
+  );
+
+  if (confirmed) {
+    settings.setProjectPath(candidateDir);
+    updatePrompt();
+    Logger.success(`Đã chuyển sang dự án: ${chalk.bold.blueBright(candidateDir)} (Đã cập nhật file config)`);
+
+    const isGeneric =
+      !remainingIntent ||
+      /^(chúng\s+ta\s+)?phát\s+triển\s+(dự\s+án\s+này|project\s+này)$/i.test(remainingIntent) ||
+      /^này$/i.test(remainingIntent);
+
+    if (!isGeneric && remainingIntent) {
+      await runFeatureDev(remainingIntent);
+    } else {
+      console.log(chalk.cyan(`\n👉 Hãy cho tôi biết tính năng hoặc yêu cầu bạn muốn phát triển trong dự án "${folderName}":\n`));
+    }
+    return true;
+  } else {
+    console.log(chalk.yellow('\nTôi chưa rõ đây là gì, bạn hãy nói ý định của mình.\n'));
+    return true;
+  }
+}
+
 function isCommandKeyword(token: string): boolean {
   const t = token.toLowerCase().replace(/^\/+/, '');
   return [
@@ -618,13 +704,18 @@ export async function processCommandLine(line: string): Promise<boolean> {
     return true;
   }
 
-  // Shell Command Execution (Zero AI latency, runs directly on local project terminal)
+  // 1. Check for Project Intent & Confirmation (e.g. "cd du-an-1 chúng ta phát triển...", "du-an-1")
+  if (await checkProjectIntent(trimmed)) {
+    return true;
+  }
+
+  // 2. Shell Command Execution (Zero AI latency, runs directly on local project terminal)
   if (isShellCommand(trimmed)) {
     executeShellPipeline(trimmed);
     return true;
   }
 
-  // Any natural language text is handled by the AI Multi-Agent Orchestrator
+  // 3. Any natural language text is handled by the AI Multi-Agent Orchestrator
   await runFeatureDev(trimmed);
   return true;
 }

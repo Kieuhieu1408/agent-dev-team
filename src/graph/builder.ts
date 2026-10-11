@@ -3,6 +3,7 @@ import { AgentStateAnnotation, AgentState } from './state.js';
 import { supervisorNode } from './nodes/supervisor-node.js';
 import { chatNode } from './nodes/chat-node.js';
 import { exploreNode } from './nodes/explore-node.js';
+import { clarifyNode } from './nodes/clarify-node.js';
 import { poNode } from './nodes/po-node.js';
 import { architectNode } from './nodes/architect-node.js';
 import { devNode } from './nodes/dev-node.js';
@@ -19,6 +20,7 @@ export function buildDevTeamGraph() {
     .addNode('supervisor', supervisorNode)
     .addNode('chat', chatNode)
     .addNode('explore', exploreNode)
+    .addNode('clarify', clarifyNode)
     .addNode('po', poNode)
     .addNode('architect', architectNode)
     .addNode('dev', devNode)
@@ -27,10 +29,12 @@ export function buildDevTeamGraph() {
     .addConditionalEdges('supervisor', (state: AgentState) => routeAfterSupervisor(state), {
       chat: 'chat',
       explore: 'explore',
+      clarify: 'clarify',
       po: 'po',
     })
     .addEdge('chat', END)
     .addEdge('explore', END)
+    .addEdge('clarify', END)
     .addConditionalEdges('po', (state: AgentState) => routeAfterPO(state), {
       architect: 'architect',
       __end__: END,
