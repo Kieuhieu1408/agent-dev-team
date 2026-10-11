@@ -1,48 +1,154 @@
-# h-dev-agent (AutoDevGraph)
+# agent-dev-team
 
-**h-dev-agent** (với CLI command `h-claude`) là một hệ thống Multi-Agent đột phá được xây dựng trên nền tảng LangGraph và Node.js. 
+> **Terminal-First Multi-Agent Orchestrator** – Điều phối đội ngũ AI Agent và quản lý các Terminal độc lập trên máy cá nhân, tự động hóa vòng lặp `Code ➔ Test ➔ Self-Healing ➔ Verify`.
 
-Hệ thống mô phỏng một **Team Dev ảo** (Product Owner, Solution Architect, Developer, Tester) có khả năng tự động hóa vòng đời phát triển phần mềm. Điểm khác biệt lớn nhất là các Agent thực thi công việc thông qua một **Terminal ảo (PTY)** để điều khiển trực tiếp `claude CLI`, thay vì ghi file mã nguồn một cách "mù quáng".
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue.svg)](https://www.typescriptlang.org/)
+[![LangGraph](https://img.shields.io/badge/Orchestrator-LangGraph-orange.svg)](https://github.com/langchain-ai/langgraphjs)
 
-## 🚀 Tính năng nổi bật
+---
 
-*   **Đội ngũ AI Đa năng (Multi-Agent):** Điều phối các vai trò chuyên biệt (PO, SA, Dev, Tester) bằng LangGraph.
-*   **Trí nhớ qua Tài liệu (Artifact-driven):** Quản lý tiến độ bằng các file `tasks/*.md` và `MASTER_PLAN.json`, loại bỏ tình trạng tràn ngữ cảnh (context bloat) và ảo giác (hallucination) thường thấy ở RAG.
-*   **Mô phỏng Người dùng (PTY Execution):** Agent thao tác trên terminal bằng lệnh `claude` y hệt một lập trình viên con người, tự đọc log lỗi và tự sửa sai (ReAct).
-*   **An toàn & Kiểm soát (HITL):** Tích hợp Semantic Guardrails. Tự động tạm dừng và xin phép người dùng qua Terminal UI nếu Agent định chạy các lệnh rủi ro cao.
-*   **Khả năng tự phục hồi (Self-healing):** Tự động đổi LLM Provider nếu gặp lỗi kết nối hoặc rate limit.
+## 🎯 Vấn đề Giải quyết (The Pain Point)
 
-## 📦 Cài đặt (Setup)
+Khi sử dụng AI (như Claude CLI / Cursor) để lập trình, các lập trình viên thường rơi vào **"Human Relay Loop"** (vòng lặp chuyển phát thủ công vô tận):
 
-1. Clone dự án:
-```bash
-git clone https://github.com/Kieuhieu1408/h-dev-agent.git
-cd h-dev-agent
+```
+[Claude CLI] ──(Copy code)──> [IDE: Bấm Run / Test] ──(Báo lỗi)──> [Copy Error Log] ──> [Claude CLI: Nhờ fix] (Lặp lại)
 ```
 
-2. Cài đặt thư viện:
+1. **Context Switching liên tục**: Bạn phải liên tục Alt+Tab giữa Terminal, IDE (IntelliJ, VSCode) và cửa sổ Chat.
+2. **Claude CLI bị chiếm dụng (Single REPL / Blocking)**: Một phiên CLI chỉ làm được một việc tuần tự, không thể vừa mở tiến trình chạy test/dev server ngầm, vừa phân tích và sửa code.
+3. **Thiếu Quản lý Trạng thái (State Management)**: Không có cơ chế trung tâm theo dõi task đang ở đâu, lỗi ở bước nào, và tự động chuyển giao thông tin lỗi giữa các tiến trình.
+
+**`agent-dev-team`** giải quyết triệt để vấn đề này: Không cần giao diện web/app cồng kềnh, **toàn bộ được điều khiển ngay trong Terminal**.
+
+---
+
+## 💡 Điểm Đột Phá Cốt Lõi
+
+### 1. Multi-Terminal Isolation (Quản lý các Terminal độc lập trên máy)
+Hệ thống sử dụng **Pseudo-Terminal (PTY)** hoặc **Process Pool** để spawn và giám sát các phiên terminal chạy ngầm độc lập trên máy cá nhân của bạn:
+*   **Terminal 1 (Dev Worker):** Chạy `claude CLI` để phân tích kiến trúc, refactor, viết mã nguồn.
+*   **Terminal 2 (Test & Build Runner):** Chạy lệnh kiểm thử (`mvn test`, `gradle test`, `npm test`, `pytest`) hoàn toàn độc lập, không block terminal chính.
+*   **Terminal 3 (Watcher / Service):** Chạy dev-server hoặc linter ngầm khi cần.
+
+### 2. Centralized State Management (Quản lý trạng thái tập trung)
+Toàn bộ tiến trình làm việc được quản lý bằng một **State Machine**:
+`IDLE` ➔ `PLANNING` ➔ `CODING` ➔ `RUNNING_TEST` ➔ `AUTO_FIXING` ➔ `DONE`.
+Mọi trạng thái, nhiệm vụ (`tasks/*.md`) và logs đều được lưu trữ nhất quán, cho phép tạm dừng, phục hồi và kiểm soát an toàn (Human-in-the-Loop).
+
+### 3. Vòng lặp Tự sửa lỗi Khép kín (Closed-Loop Self-Healing)
+Khi Terminal Test bắt được exit code khác 0 hoặc stacktrace lỗi:
+*   State Manager tự động trích xuất lỗi và đẩy sang Terminal của Claude CLI.
+*   Claude CLI tự sửa code và kích hoạt test lại.
+*   Bạn không cần copy/paste log thủ công nữa – chỉ cần review kết quả cuối cùng!
+
+---
+
+## 🏗️ Kiến trúc Hệ thống (Architecture)
+
+```
+                            ┌───────────────────────────────────┐
+                            │    BẠN (Gõ lệnh từ Terminal)      │
+                            │  $ devteam run "Thêm tính năng X" │
+                            └─────────────────┬─────────────────┘
+                                              │
+                                              ▼
+                    ┌───────────────────────────────────────────────────┐
+                    │            AGENT-DEV-TEAM ORCHESTRATOR            │
+                    │                                                   │
+                    │  • LangGraph State Engine (Quản lý trạng thái)    │
+                    │  • Artifact-Driven Memory (.devteam/tasks/*.md)   │
+                    │  • Event Bus & Log Parser                         │
+                    └─────────┬───────────────────────────────┬─────────┘
+                              │                               │
+           ┌──────────────────▼──────────┐         ┌──────────▼──────────────┐
+           │     TERMINAL 1 (Worker)     │         │   TERMINAL 2 (Verifier) │
+           │     Điều khiển Claude CLI   │         │   Trình chạy Test/Build │
+           │                             │         │                         │
+           │ • Đọc kế hoạch & code       │         │ • Chạy test độc lập     │
+           │ • Tự động nhận log lỗi để   │◄─Event──│ • Bắt stderr/fail test  │
+           │   sửa sai (Self-healing)    │  FixBug │ • Thông báo State Engine│
+           └─────────────────────────────┘         └─────────────────────────┘
+```
+
+---
+
+## 👥 Đội ngũ Agent Ảo (Virtual Dev Team)
+
+*   📋 **Product Owner (PO):** Phân tích yêu cầu cấp cao, chia nhỏ thành các nhiệm vụ cụ thể (`tasks/*.md`).
+*   🏛️ **Solution Architect (SA):** Thiết kế kiến trúc kỹ thuật, interface, quy chuẩn mã nguồn.
+*   💻 **Developer (Dev Agent):** Điều khiển `claude CLI` qua PTY để hiện thực hóa mã nguồn.
+*   🧪 **Tester (QA Agent):** Kích hoạt terminal kiểm thử, phân tích log lỗi và gửi phản hồi cho Dev nếu fail.
+
+---
+
+## 📦 Cài đặt (Installation)
+
+### Yêu cầu tiên quyết
+*   **Node.js**: >= 18.0.0
+*   **npm** hoặc **pnpm**
+*   **Claude CLI**: Đã cài đặt trên máy (`npm install -g @anthropic-ai/claude-code`)
+
+### Cài đặt dự án
+
+1. Clone repository:
+```bash
+git clone https://github.com/Kieuhieu1408/agent-dev-team.git
+cd agent-dev-team
+```
+
+2. Cài đặt dependencies:
 ```bash
 npm install
 ```
 
-3. Cấu hình biến môi trường:
-Tạo file `.env` ở thư mục gốc và điền API Key của bạn (Sử dụng 9router hoặc OpenAI/Anthropic):
+3. Cấu hình môi trường:
+Tạo file `.env` ở thư mục gốc:
 ```env
 LLM_PROVIDER_URL=https://9router.com/v1
-LLM_API_KEY=sk-...
+LLM_API_KEY=sk-your-api-key
 ```
 
-## 💻 Cách sử dụng
-
-1. Build và liên kết lệnh toàn cục:
+4. Build và liên kết lệnh CLI:
 ```bash
 npm run build
 npm link
 ```
 
-2. Sử dụng ở bất kỳ đâu trên máy tính của bạn:
-Di chuyển vào thư mục dự án bạn muốn code và gõ:
+---
+
+## 💻 Hướng dẫn Sử dụng (Usage)
+
+Di chuyển vào bất kỳ thư mục dự án nào trên máy tính của bạn và chạy lệnh:
+
 ```bash
-h-claude
+# Khởi chạy giao diện điều khiển Terminal
+devteam
+
+# Hoặc chạy trực tiếp với một yêu cầu cụ thể
+devteam run "Tạo REST API quản lý người dùng với JWT authentication và unit test"
 ```
-Giao diện Chat (TUI) sẽ hiện ra, bạn chỉ cần mô tả ý tưởng, Team Dev Agent sẽ tự động lên kế hoạch và viết code cho bạn!
+
+### Các lệnh hữu ích:
+*   `devteam status`: Xem trạng thái hiện tại của các terminal và tiến độ các task.
+*   `devteam logs`: Xem output real-time từ các terminal chạy ngầm.
+*   `devteam stop`: Dừng an toàn tất cả các terminal và lưu lại checkpoint.
+
+---
+
+## 🗺️ Lộ trình Phát triển (Roadmap)
+
+- [x] Thiết kế kiến trúc Multi-Agent & State Machine (BRD, SRD, PLAN).
+- [ ] Xây dựng Core PTY Manager (quản lý đa terminal ngầm).
+- [ ] Tích hợp Claude CLI Driver & Event Parser (tự động bắt lỗi test).
+- [ ] Xây dựng State Engine & Artifacts Manager.
+- [ ] Hoàn thiện CLI/TUI Interactive Console (`devteam`).
+- [ ] Thêm chế độ Human-in-the-Loop (HITL) xác nhận lệnh nguy hiểm.
+
+---
+
+## 📄 Bản quyền (License)
+
+Dự án được phát hành dưới giấy phép [MIT](LICENSE).

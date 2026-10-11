@@ -1,76 +1,118 @@
-# Kế Hoạch Triển Khai Code (Plan Mega-Prompt)
+# Kế Hoạch Triển Khai Mã Nguồn (Plan Mega-Prompt) - agent-dev-team
 
-***LƯU Ý:** File này được thiết kế như một **Mega-Prompt**. Khi bạn mở một phiên chat (Terminal) mới với Claude Code, hãy dùng lệnh `!cat docs/PLAN.md` hoặc yêu cầu Claude đọc file này để ngay lập tức hiểu toàn bộ bối cảnh và bắt tay vào code.*
+> **LƯU Ý:** File này được thiết kế như một **Mega-Prompt**. Bất cứ khi nào bạn mở một phiên làm việc mới với AI, chỉ cần yêu cầu AI đọc file này để nắm bắt đầy đủ ngữ cảnh kiến trúc và thực thi các task một cách chuẩn xác.
 
 ---
 
 ## 1. Vai trò (Role)
-Bạn là một Senior AI Engineer & Node.js Expert. Nhiệm vụ của bạn là hiện thực hóa dự án **AutoDevGraph** (còn gọi là `h-claude`). Đây là một công cụ CLI hoạt động tương tự như Claude Code, nhưng bên trong nó là một đội ngũ Multi-Agent (LangGraph) tự động hóa quy trình phát triển phần mềm.
 
-## 2. Ngữ cảnh Kiến trúc (Architecture Context)
-Hệ thống này **KHÔNG** dùng workflow cứng ngắc, **KHÔNG** truyền file code qua message context (để tối ưu Token). Thay vào đó, nó hoạt động dựa trên các nguyên lý sau:
-1.  **Agentic Orchestration:** LangGraph đóng vai trò quản đốc luân chuyển công việc (TODO -> IN_PROGRESS). LLM trong các Node (PO, SA, Dev, Tester) tự đưa ra quyết định nghiệp vụ.
-2.  **Artifact-Driven Memory:** Agent đọc/ghi vào các file trong `.autodev/tasks/` làm "Bàn cờ ảo". Không lạm dụng RAG.
-3.  **PTY Execution Tool:** Công cụ duy nhất của Dev_Agent và Tester_Agent là một Pseudo-Terminal (Node-PTY) chạy ẩn lệnh `claude`. Các Agent gửi lệnh vào PTY, quan sát `stdout`, và tự suy luận (ReAct) đến khi hoàn thành task.
-4.  **Thinking Framework:** Mỗi Agent bắt buộc phải xuất ra thẻ `<thought> ... </thought>` trước khi hành động, giúp nó biết khi nào cần gõ lệnh `/model` để đổi LLM nếu gặp lỗi kết nối (Self-healing).
-5.  **Interactive TUI:** Lớp ngoài cùng là CLI tool (`h-claude`) dùng `@clack/prompts` để hiện thanh trạng thái đẹp mắt, và cho phép Human-in-the-Loop (HITL) phê duyệt nếu Agent làm việc nguy hiểm.
-
-## 3. Thông số Kỹ thuật (Specifications)
-*   **Ngôn ngữ:** TypeScript (Node.js).
-*   **Entry Point CLI:** Lệnh toàn cục `h-claude` sẽ map vào `./dist/cli.js`.
-*   **LLM Provider (LLMLine):** Hệ thống sử dụng API tương thích OpenAI từ **9Router**.
-    *   `Base URL`: `https://9router.com/v1`
-    *   `API Key`: `sk-b0f215572cf1a335-5sgnzr-601aab9a`
-*   **Thư viện lõi:** `@langchain/langgraph`, `@langchain/openai` (dùng cho 9router), `node-pty` (để giao tiếp terminal), `@clack/prompts` (làm giao diện CLI UI).
-
-## 4. Cấu trúc Thư mục Yêu cầu (Project Structure)
-(Hãy tạo đúng cấu trúc này trong quá trình code)
-```text
-h-claude/
-├── package.json
-├── tsconfig.json
-├── .env
-├── src/
-│   ├── cli.ts                 # Điểm khởi chạy lệnh `h-claude` (TUI & Repl loop)
-│   ├── core/                  
-│   │   ├── llmline.ts         # Khởi tạo @langchain/openai trỏ tới 9router
-│   │   ├── logger.ts          # Ghi log ra màn hình bằng clack
-│   │   └── guardrails.ts      # Kiểm duyệt an toàn lệnh PTY
-│   ├── graph/                 
-│   │   ├── state.ts           # Định nghĩa cấu trúc AgentState cho LangGraph
-│   │   └── builder.ts         # Lắp ráp Graph, định nghĩa Edges & Routing
-│   ├── agents/                
-│   │   ├── prompts.ts         # System prompts với <thought> tags
-│   │   ├── BaseAgent.ts       # Interface nền tảng
-│   │   ├── PlannerNode.ts     # Đóng vai trò PO/SA (Lên kế hoạch ra file)
-│   │   └── ExecutionNode.ts   # Đóng vai trò Dev/Tester (Gọi PTY Tool)
-│   └── tools/                 
-│       ├── ptyManager.ts      # Wrapper cho node-pty chạy process `claude`
-│       └── ptyTool.ts         # Tool class chuẩn của Langchain cho Agent gọi
-```
-
-## 5. Kế Hoạch Thực Thi (Execution Tasks)
-Khi bắt đầu, bạn hãy code theo tuần tự sau. Sau mỗi bước, tự động báo cáo và chạy test (nếu cần):
-
-*   **Task 1: Khởi tạo Project & Cài đặt (Init):**
-    *   Tạo `package.json`, `tsconfig.json`. Cấu hình `bin: { "h-claude": "./dist/cli.js" }`.
-    *   Cài đặt các dependency: `npm i @langchain/langgraph @langchain/openai @langchain/core node-pty @clack/prompts dotenv`.
-*   **Task 2: Tầng Lõi (Core & LLMLine):**
-    *   Code `src/core/llmline.ts` để kết nối API 9router bằng API Key đã cho.
-    *   Code `src/core/logger.ts` bằng `@clack/prompts`.
-*   **Task 3: Tầng Tools (PTY Adapter):**
-    *   Tạo `src/tools/ptyManager.ts` dùng `node-pty` để tạo một shell, spawn process `claude` (nếu có trên máy).
-    *   Bọc nó lại thành Langchain Tool `ptyTool.ts`.
-*   **Task 4: Tầng Graph & Agents:**
-    *   Xây dựng `state.ts` (quản lý `tasks`, `current_status`).
-    *   Xây dựng `prompts.ts` tích hợp `<thought>` framework.
-    *   Hoàn thiện `builder.ts` để nối các Node lại.
-*   **Task 5: Tầng CLI (Entry Point):**
-    *   Hoàn thiện `src/cli.ts` (Thêm shebang `#!/usr/bin/env node`).
-    *   Xây dựng vòng lặp REPL, hiển thị thanh tiến trình spinner khi Graph đang chạy.
-*   **Task 6: Build & Test:**
-    *   Thêm script `"build": "tsc"` vào `package.json`.
-    *   Hướng dẫn người dùng chạy `npm run build` và `npm link` để test thử lệnh `h-claude`.
+Bạn là một **Senior AI & Systems Engineer (Node.js & TypeScript Expert)**. Nhiệm vụ của bạn là hiện thực hóa dự án **`agent-dev-team`** (lệnh CLI: `devteam`). Đây là một công cụ điều phối đa terminal độc lập trên máy cục bộ, quản lý trạng thái tập trung và tự động hóa quy trình phát triển phần mềm thông qua `claude CLI` mà không cần con người làm trung gian copy/paste bug.
 
 ---
-*Bắt đầu ngay từ Task 1 khi nhận được prompt này.*
+
+## 2. Ngữ cảnh Kiến trúc Cốt lõi (Architecture Context)
+
+Hệ thống hoạt động dựa trên các nguyên lý trọng tâm:
+1. **Terminal-First (Không cần GUI cồng kềnh):** Mọi thao tác điều khiển được thực hiện qua giao diện dòng lệnh (CLI/TUI) gọn nhẹ và mượt mà.
+2. **Multi-Terminal Process Isolation:** Quản lý nhiều pseudo-terminal (PTY) ngầm chạy song song trên máy người dùng:
+   * **Terminal 1 (Dev Worker):** Điều khiển `claude CLI` để phân tích và viết code.
+   * **Terminal 2 (Test Runner):** Thực thi các lệnh build/test độc lập (`npm test`, `mvn test`, `pytest`...) mà không làm nghẽn Terminal 1.
+3. **Centralized State Management:** Quản lý vòng đời tác vụ thông qua State Machine:
+   `IDLE` ➔ `PLANNING` ➔ `DEV_CODING` ➔ `RUNNING_TEST` ➔ `SELF_HEALING` ➔ `VERIFIED` ➔ `DONE`.
+   Lưu trữ tiến độ tại `.devteam/state.json` và `.devteam/tasks/task_XXX.md`.
+4. **Closed-Loop Self-Healing:** Khi Test Runner bắt được lỗi, Log Parser tự động trích xuất stacktrace và gửi thông tin lỗi sang Dev Worker để Claude CLI tự fix code cho tới khi pass.
+5. **Human-in-the-Loop (HITL) & Guardrails:** Tự động chặn các câu lệnh nguy hiểm và cho phép người dùng can thiệp khi cần thiết.
+
+---
+
+## 3. Thông số Kỹ thuật (Technical Specifications)
+
+* **Ngôn ngữ:** TypeScript (Node.js >= 18).
+* **CLI Command Entry:** Lệnh `devteam` map vào `./dist/cli.js`.
+* **LLM Provider (9Router / OpenAI Compatible):**
+  * `Base URL`: `https://9router.com/v1` (hoặc cấu hình qua `.env`)
+  * Model mặc định: `claude-3-5-sonnet` hoặc `gpt-4o`.
+* **Thư viện chính:**
+  * `@langchain/langgraph`: Điều phối đồ thị trạng thái Agent Team.
+  * `@langchain/openai`: Kết nối LLM Provider qua chuẩn OpenAI.
+  * `node-pty`: Quản lý các tiến trình pseudo-terminal ngầm trên macOS/Linux.
+  * `@clack/prompts`: Xây dựng giao diện dòng lệnh TUI trực quan, spinner, prompt.
+  * `dotenv`: Quản lý biến môi trường.
+
+---
+
+## 4. Cấu trúc Thư mục Dự án Yêu cầu
+
+```text
+agent-dev-team/
+├── package.json
+├── tsconfig.json
+├── .env.example
+├── README.md
+├── docs/
+│   ├── BRD.md
+│   ├── SRD.md
+│   └── PLAN.md
+├── src/
+│   ├── cli.ts                 # Điểm khởi chạy lệnh `devteam`
+│   ├── config/
+│   │   └── settings.ts        # Đọc cấu hình từ .env
+│   ├── core/
+│   │   ├── state-manager.ts   # State Machine và lưu trữ checkpoint (.devteam/)
+│   │   ├── logger.ts          # Hiển thị UI / Spinner bằng @clack/prompts
+│   │   ├── guardrails.ts      # Kiểm duyệt an toàn các lệnh terminal
+│   │   └── llm-factory.ts     # Khởi tạo LLM Provider
+│   ├── terminal/
+│   │   ├── pty-manager.ts     # Wrapper quản lý đa tiến trình pseudo-terminal
+│   │   ├── dev-worker.ts      # Quản lý terminal chạy Claude CLI
+│   │   └── test-runner.ts     # Quản lý terminal chạy test/build độc lập
+│   ├── watchers/
+│   │   └── log-parser.ts      # Phân tích log và trích xuất lỗi test
+│   ├── graph/
+│   │   ├── state.ts           # Định nghĩa cấu trúc AgentState cho LangGraph
+│   │   ├── builder.ts         # Khởi tạo các Node và liên kết luồng
+│   │   └── nodes/
+│   │       ├── po-node.ts     # Lên kế hoạch và chia task
+│   │       ├── architect-node.ts # Định hình cấu trúc kỹ thuật
+│   │       ├── dev-node.ts    # Kích hoạt DevWorker
+│   │       └── tester-node.ts # Kích hoạt TestRunner & nhận diện bug
+│   └── tools/
+│       ├── file-system.ts     # Đọc/ghi files nhiệm vụ (.devteam/tasks/)
+│       └── terminal-tool.ts   # Tool LangChain gọi PTY
+```
+
+---
+
+## 5. Kế Hoạch Thực Thi Từng Bước (Execution Roadmap)
+
+Khi bắt đầu code, thực hiện tuần tự theo các nhiệm vụ sau:
+
+### Task 1: Khởi tạo Dự án & Dependencies
+* Tạo `package.json` với cấu hình `"bin": { "devteam": "./dist/cli.js" }`.
+* Cài đặt dependencies: `@langchain/langgraph`, `@langchain/openai`, `@langchain/core`, `node-pty`, `@clack/prompts`, `dotenv`.
+* Tạo file `tsconfig.json` và `.env.example`.
+
+### Task 2: Core State Manager & Config
+* Xây dựng `src/config/settings.ts` để đọc cấu hình API Key và model.
+* Xây dựng `src/core/state-manager.ts` để quản lý các trạng thái (`IDLE`, `PLANNING`, `DEV_CODING`, `RUNNING_TEST`, `SELF_HEALING`, `DONE`) và lưu trữ checkpoint tại `.devteam/state.json`.
+* Xây dựng `src/core/logger.ts` sử dụng `@clack/prompts`.
+
+### Task 3: Terminal Process Isolation (PTY Engine)
+* Xây dựng `src/terminal/pty-manager.ts` để spawn các tiến trình terminal ngầm trên máy cục bộ.
+* Xây dựng `src/terminal/dev-worker.ts`: Điều khiển tiến trình `claude CLI`, gửi prompt và lắng nghe hoàn tất.
+* Xây dựng `src/terminal/test-runner.ts`: Tự động nhận diện loại dự án và chạy test ngầm không gây block.
+
+### Task 4: Watcher & Log Parser (Self-Healing Bridge)
+* Xây dựng `src/watchers/log-parser.ts`: Bắt exit code != 0 và trích xuất stacktrace lỗi.
+* Kết nối sự kiện lỗi với State Manager để kích hoạt pha `SELF_HEALING`.
+
+### Task 5: LangGraph Agent Orchestration
+* Xây dựng `src/graph/state.ts` và các Node nghiệp vụ (PO, Architect, Dev, Tester).
+* Kết nối luồng hoàn chỉnh: PO chia task ➔ Dev code qua Claude CLI ➔ Tester chạy test ➔ Nếu fail thì tự đẩy bug cho Dev fix ➔ Verify thành công.
+
+### Task 6: CLI & TUI Interface
+* Xây dựng `src/cli.ts` với các lệnh: `devteam run <intent>`, `devteam status`, `devteam logs`.
+* Đảm bảo trải nghiệm trực quan, có spinner và thanh tiến trình rõ ràng.
+
+### Task 7: Build & Publish Local
+* Chạy `npm run build` và `npm link` để kiểm tra trực tiếp lệnh `devteam` trên máy tính cá nhân.

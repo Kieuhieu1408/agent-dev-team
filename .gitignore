@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+.devteam/
 .autodev/
 docs/LEARN.md
 .DS_Store
+**/.DS_Store

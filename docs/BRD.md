@@ -1,98 +1,109 @@
-# Business Requirements Document (BRD) - Dự án AutoDevGraph
+# Business Requirements Document (BRD) - Dự án agent-dev-team
 
 ## 1. Tổng quan dự án (Executive Summary)
 
-AutoDevGraph là một hệ thống Multi-Agent được xây dựng trên nền tảng LangGraph và TypeScript. Hệ thống mô phỏng một nhóm phát triển phần mềm (Team Dev) bao gồm các vai trò: Product Owner (PO), Solution Architect (SA), Developer (Dev), và Tester. 
+**agent-dev-team** là một hệ thống Multi-Agent và Process Orchestrator hoạt động hoàn toàn trên **Terminal**. Hệ thống được xây dựng trên nền tảng LangGraph, Node.js và PTY (Pseudo-Terminal) nhằm giải quyết điểm nghẽn lớn nhất trong việc phát triển phần mềm với AI: **Vòng lặp con người làm cầu nối thủ công (Human Relay Loop)**.
 
-Điểm đột phá của kiến trúc này là:
-1. **Agent tự quyết định (Agentic Orchestration):** Hệ thống không dùng các luồng (workflow) định sẵn cứng nhắc. LLM bên trong mỗi Agent tự quyết định các bước thực hiện dựa trên vai trò của mình.
-2. **Giao tiếp qua Artifacts (Tài liệu):** Các Agent không truyền toàn bộ ngữ cảnh (mã nguồn, yêu cầu) qua lại thông qua tin nhắn (messages), mà đọc/ghi vào các file tài liệu sống (Living Documents) đóng vai trò như "trí nhớ" hay "bàn cờ ảo".
-3. **Mô phỏng thao tác người dùng qua PTY:** Thay vì trực tiếp chỉnh sửa mã nguồn, các Agent (Dev/Tester) tương tác với hệ thống thông qua một Pseudo-Terminal (PTY), đóng vai trò như một người dùng đang điều khiển công cụ **Claude Code CLI**.
+Hiện nay, khi lập trình viên sử dụng AI CLI (như Claude Code):
+1. Nhập lệnh trên CLI ➔ AI sinh code.
+2. Lập trình viên phải chuyển sang IDE (như IntelliJ, VSCode) để bấm Run / Test.
+3. Nếu có lỗi, lập trình viên phải copy log lỗi/stacktrace từ console IDE và paste ngược lại cho AI fix.
+4. Quá trình này lặp lại liên tục, gây tiêu tốn thời gian, đứt gãy sự tập trung và biến con người thành một "nhân viên chuyển phát tin nhắn".
+
+**agent-dev-team** loại bỏ hoàn toàn sự can thiệp thủ công này bằng cách:
+*   **Quản lý các Terminal độc lập trên máy cá nhân:** Mở và giám sát song song các phiên terminal ngầm (một terminal cho Claude CLI viết code, một terminal độc lập để chạy test/build).
+*   **Quản lý trạng thái tập trung (State Management):** Theo dõi toàn bộ vòng đời của task (`IDLE` ➔ `PLANNING` ➔ `DEV_CODING` ➔ `RUNNING_TEST` ➔ `SELF_HEALING` ➔ `DONE`).
+*   **Vòng lặp tự sửa lỗi khép kín (Self-Healing Loop):** Tự động bắt exit code và log lỗi từ terminal test, đẩy ngược lại cho Claude CLI tự sửa cho đến khi tất cả các bài test vượt qua.
+
+---
 
 ## 2. Yêu cầu chức năng (Functional Requirements - FR)
 
-### FR1. Quản lý trạng thái bằng Artifacts (File-based Memory)
-*   **Mô tả:** Hệ thống phải sử dụng hệ thống file nội bộ (ví dụ: `.autodev/`) để lưu trữ tiến độ và yêu cầu, thay vì phụ thuộc vào bộ nhớ ngữ cảnh (Context Window) của LLM.
+### FR1. Quản lý trạng thái tác vụ (Centralized State Management)
+*   **Mô tả:** Hệ thống phải quản lý trạng thái tập trung của toàn bộ tiến trình thông qua State Machine và lưu trữ trên hệ thống file nội bộ (`.devteam/`).
 *   **Chi tiết:**
-    *   PO_Agent có khả năng khởi tạo và cập nhật các file nhiệm vụ (Task Files).
-    *   SA_Agent có khả năng bổ sung thiết kế kỹ thuật vào các file nhiệm vụ.
-    *   Hệ thống đồ thị (LangGraph) đọc trạng thái của các file này để biết tính năng nào đang ở giai đoạn nào (TODO, IN_PROGRESS, DONE) nhằm điều phối luồng.
+    *   Lưu trữ metadata và tiến độ trong `MASTER_PLAN.json`.
+    *   Từng nhiệm vụ chi tiết được ghi vào các living documents (`.devteam/tasks/task_XXX.md`).
+    *   Hệ thống đồ thị (LangGraph) đọc trạng thái để biết chính xác task đang ở bước nào (TODO, IN_PROGRESS, TESTING, BUG_FIXING, DONE) nhằm điều phối luồng mà không làm phình context window của LLM.
 
-### FR2. Điều phối đa tác tử (Agentic Orchestration)
-*   **Mô tả:** Hệ thống hỗ trợ và luân chuyển luồng công việc giữa các Node đóng vai trò riêng biệt.
+### FR2. Quản lý đa Terminal độc lập (Multi-Terminal Process Isolation)
+*   **Mô tả:** Hệ thống phải có khả năng khởi tạo, giám sát và điều khiển nhiều phiên terminal (PTY) ngầm chạy song song trên máy cục bộ của người dùng.
 *   **Chi tiết:**
-    *   Các Node cốt lõi: `PO_Node`, `SA_Node`, `Dev_Node`, `Tester_Node`.
-    *   Luồng luân chuyển không cố định tuyến tính mà dựa trên kết quả đầu ra của Node. (Ví dụ: Tester báo lỗi, luồng tự động vòng lại Dev; Dev hoàn thành task, luồng vòng lại Supervisor để lấy task mới).
+    *   **Dev Worker Terminal:** Chạy tiến trình `claude CLI`, nhận lệnh và chỉnh sửa mã nguồn.
+    *   **Test Runner Terminal:** Chạy độc lập các lệnh build/test của dự án (`mvn test`, `gradle test`, `npm test`, `pytest`, `cargo test`...) mà không block terminal của Dev.
+    *   **Background Service Terminal (Tuỳ chọn):** Quản lý dev server hoặc file watcher ngầm khi cần.
+    *   Các terminal hoạt động độc lập, không xung đột I/O với terminal chính của người dùng.
 
-### FR3. Tích hợp Pseudo-Terminal (PTY Tool)
-*   **Mô tả:** Cung cấp công cụ cho các Agent tương tác với môi trường CLI như một con người.
+### FR3. Vòng lặp Tự sửa lỗi Khép kín (Closed-Loop Self-Healing)
+*   **Mô tả:** Tự động phát hiện lỗi kiểm thử và điều phối việc sửa lỗi mà không cần người dùng copy/paste log.
 *   **Chi tiết:**
-    *   Xây dựng một Tool (ví dụ: `Execute_PTY_Command`) cấp quyền cho Agent.
-    *   Tool này có khả năng khởi chạy tiến trình `claude`, gửi lệnh stdin và đọc kết quả stdout/stderr.
-    *   Tool phải có khả năng nhận diện khi nào dòng lệnh kết thúc (chờ lệnh mới) để trả kết quả về cho Agent "nhìn" (Observe).
+    *   Log Parser theo dõi stdout/stderr từ Test Terminal.
+    *   Khi phát hiện lỗi (exit code != 0, assertion failure, compilation error):
+        *   Trích xuất stacktrace và context của file gây lỗi.
+        *   Bắn event lỗi sang State Manager để chuyển trạng thái sang `SELF_HEALING`.
+        *   Truyền thông tin lỗi vào Dev Terminal (Claude CLI) để thực hiện sửa đổi mã nguồn.
+        *   Sau khi Dev xác nhận đã sửa, tự động kích hoạt Test Terminal chạy lại kiểm thử.
+    *   Cơ chế Circuit Breaker: Giới hạn số lần thử lại (ví dụ: tối đa 3-5 lần). Nếu vượt ngưỡng, chuyển sang trạng thái cảnh báo người dùng.
 
-### FR4. Human-in-the-Loop (HITL) & Safety Guardrails
-*   **Mô tả:** Đảm bảo an toàn hệ thống và cho phép con người can thiệp khi cần thiết.
+### FR4. Điều phối Đội ngũ Đa Tác tử (Multi-Agent Team Orchestration)
+*   **Mô tả:** Phân chia trách nhiệm rõ ràng giữa các vai trò trong một nhóm phát triển phần mềm:
+    *   **Product Owner (PO):** Tiếp nhận prompt của người dùng, phân tích và chia nhỏ thành danh sách task cụ thể.
+    *   **Solution Architect (SA):** Định nghĩa kiến trúc, interface và các quy chuẩn kỹ thuật.
+    *   **Developer (Dev Agent):** Thao tác trên Dev Terminal để viết code theo thiết kế.
+    *   **Tester (QA Agent):** Lập kế hoạch kiểm thử, kích hoạt Test Terminal và đánh giá kết quả kiểm thử.
+
+### FR5. An toàn và Kiểm soát Người dùng (HITL & Guardrails)
+*   **Mô tả:** Đảm bảo an toàn cho máy tính cá nhân của người dùng, ngăn chặn các lệnh nguy hiểm.
 *   **Chi tiết:**
-    *   Phân tích luồng output từ PTY để phát hiện các mẫu rủi ro hoặc câu hỏi yêu cầu quyền (ví dụ: `[Y/n]`).
-    *   Cơ chế Guardrails sẽ phân loại: 
-        *   An toàn: Tự động phản hồi (ví dụ: tự động điền `Y`).
-        *   Rủi ro: Tạm dừng (Interrupt) Node hiện tại, văng ra ngoài LangGraph và yêu cầu người dùng thật xác nhận bằng một thông báo tóm tắt nguyên nhân.
+    *   Phân tích các lệnh CLI trước khi gửi vào terminal.
+    *   Tự động phát hiện các lệnh rủi ro cao (ví dụ: `rm -rf`, ghi đè cấu hình hệ thống, push git force).
+    *   Khi phát hiện rủi ro, hệ thống tạm dừng (Interrupt) và hiển thị cảnh báo yêu cầu người dùng xác nhận trực tiếp qua Terminal UI.
+
+---
 
 ## 3. Yêu cầu phi chức năng (Non-Functional Requirements - NFR)
 
-### NFR1. Khả năng mở rộng (Extensibility)
-*   **Kiến trúc mở:** Dễ dàng bổ sung các vai trò Agent mới (VD: Security Reviewer, DevOps) bằng cách kế thừa các Interface/Base Class đã có mà không phá vỡ đồ thị hiện tại.
-*   **LLM Agnostic:** Tầng giao tiếp với LLM phải được trừu tượng hóa (thông qua `@langchain/core`), cho phép thay đổi model (Claude 3.5 Sonnet, Opus, v.v.) qua biến môi trường.
+### NFR1. Trải nghiệm Terminal-First (Terminal Native)
+*   Toàn bộ tương tác được thực hiện qua giao diện dòng lệnh (CLI/TUI) gọn nhẹ.
+*   Không yêu cầu cài đặt web server hay ứng dụng GUI nặng nề.
+*   Hiển thị trạng thái tiến độ rõ ràng bằng spinner, bảng trạng thái (status table) và màu sắc trực quan (sử dụng thư viện CLI hiện đại).
 
-### NFR2. Tính ổn định và Phục hồi (Resilience & Fault Tolerance)
-*   **Circuit Breakers:** Ngăn chặn vòng lặp vô hạn (ví dụ: Dev sửa sai -> Tester báo lỗi -> Dev sửa sai...). Phải có giới hạn số lần thử lại (Max Retries). Quá số lần, hệ thống cảnh báo và tạm dừng chờ Human.
-*   **Checkpointing:** LangGraph phải sử dụng Checkpointer (SQLite/Memory) để lưu trạng thái từng bước. Có khả năng Resume (tiếp tục) tại điểm crash nếu ứng dụng bị tắt đột ngột.
+### NFR2. Tối ưu Token và Ngữ cảnh (Token Efficiency)
+*   **Artifact-Driven Context:** Mã nguồn lớn và stacktrace dài không được nhồi trực tiếp vào prompt tin nhắn của LangGraph mà được đọc/ghi thông qua file trên đĩa.
+*   **Log Trimming & Summarization:** Log lỗi dài được lược trích phần stacktrace trọng yếu trước khi đưa vào prompt của Claude CLI để tiết kiệm token và tăng độ chính xác của bản vá.
 
-### NFR3. Tối ưu Token & Quản lý Context Window (Memory Systems)
-Để đảm bảo hiệu suất, chi phí và tránh suy giảm ngữ cảnh (Context Degradation), hệ thống áp dụng các kỹ thuật quản lý bộ nhớ tiên tiến (dựa trên Day 17 & Day 25):
-*   **Prompt Caching:** Tối ưu hóa chi phí cho các thành phần tĩnh. System Prompts của các Agent (PO, SA, Dev, Tester) và các file quy chuẩn chung (`TECH_STACK.md`) sẽ được thiết kế để tận dụng tính năng Prompt Caching của LLM Provider (ví dụ: Claude Prompt Caching).
-*   **Message Trimming & Filtering:** Bộ nhớ ngắn hạn (`messages` trong LangGraph State) phải được cấu hình cắt tỉa (Trim). Chỉ giữ lại một số lượng token (hoặc số lượng tin nhắn) nhất định gần nhất. Các tin nhắn cũ (không chứa thông tin hệ trọng) sẽ bị loại bỏ để giải phóng context.
-*   **Active Summarization (Tóm tắt chủ động):** Khi lịch sử tương tác (đặc biệt là log từ PTY) quá dài, hệ thống sử dụng một LLM call phụ để tóm tắt quá trình (ví dụ: "Đã fix lỗi cú pháp ở file A") thay vì lưu toàn bộ chuỗi lỗi (Stack trace).
-*   **Passive Memory (Artifact-Driven Context):** Mã nguồn thực tế, Spec, và tài liệu dài tuyệt đối không được đưa trực tiếp vào chuỗi hội thoại (Messages). Chúng tồn tại ở dạng Passive Memory (File trên đĩa). Agent chỉ tải chúng vào Active Context thông qua Tool (`ReadFile`) vào đúng thời điểm cần thiết, và nhả ra khi xong việc.
+### NFR3. Khả năng phục hồi (Fault Tolerance & Checkpointing)
+*   Hỗ trợ lưu lại checkpoint trạng thái (SQLite hoặc JSON storage).
+*   Nếu người dùng bấm `Ctrl+C` hoặc máy bị tắt, có thể gõ `devteam resume` để tiếp tục từ task đang dở dang.
 
-## 4. Đề xuất Design Patterns
+---
 
-1.  **State Machine Pattern:** Cốt lõi của LangGraph, điều phối luồng dựa trên trạng thái chung (`AgentState`).
-2.  **Strategy Pattern:** Thiết kế các Agent (`PO_Agent`, `Dev_Agent`...) implement từ chung một interface `IAgentNode`, giúp dễ dàng tiêm (inject) và thay đổi logic của từng Agent.
-3.  **Adapter/Facade Pattern:** Đóng gói sự phức tạp của việc giao tiếp với Node.js `node-pty` (tiến trình shell ảo) thành một interface Tool đơn giản, gọn gàng để cung cấp cho LangChain.
-4.  **Observer Pattern:** Dùng để theo dõi và log các sự kiện xảy ra trong Graph (Ví dụ: bắn log ra màn hình console để người dùng theo dõi tiến trình thực mà không làm gián đoạn luồng).
-
-## 5. Kiến trúc Thư mục Dự kiến (Project Structure)
+## 4. Kiến trúc Thư mục Hệ thống
 
 ```text
-autodevgraph/
+agent-dev-team/
 ├── package.json
 ├── tsconfig.json
+├── .env.example               
 ├── src/
-│   ├── index.ts               # Entry point, khởi tạo và chạy hệ thống
-│   ├── graph/                 # Định nghĩa LangGraph cốt lõi
-│   │   ├── state.ts           # Giao diện AgentState (Bàn cờ chung)
-│   │   ├── builder.ts         # Compile đồ thị, định nghĩa Nodes & Edges
-│   │   └── checkpoints.ts     # Logic lưu/phục hồi trạng thái Graph
-│   ├── agents/                # Chứa logic tự quyết định của LLM (Strategies)
-│   │   ├── BaseAgentNode.ts   # Lớp nền tảng / Interface
-│   │   ├── ProductOwner.ts
-│   │   ├── SolutionArchitect.ts
-│   │   ├── Developer.ts
-│   │   └── Tester.ts
-│   ├── tools/                 # Các "vũ khí" cấp cho Agent
-│   │   ├── pty/               # Sub-module xử lý Terminal ảo
-│   │   │   ├── PTYAdapter.ts  # Tương tác vật lý với shell
-│   │   │   └── PTYTool.ts     # Langchain Tool wrapper cho PTYAdapter
-│   │   └── artifacts/         # Sub-module đọc/ghi file
-│   │       └── ArtifactTool.ts
-│   ├── core/                  # Các tiện ích hệ thống dùng chung
-│   │   ├── logger.ts          # Quản lý hiển thị (Observer)
-│   │   ├── config.ts          # Đọc file cấu hình, .env
-│   │   └── guardrails.ts      # Chẩn đoán lệnh PTY an toàn / rủi ro
-├── .autodev/                  # Thư mục chứa "Trí nhớ" của Agent (Ignored in VCS)
-│   ├── context.md             # Bối cảnh / Yêu cầu gốc
-│   └── tasks/                 # Chứa các file task_01.md, task_02.md...
-└── workspace/                 # Thư mục mã nguồn mục tiêu nơi Claude CLI làm việc
+│   ├── cli.ts                 # CLI entry point (Lệnh: devteam)
+│   ├── core/                  # Core modules dùng chung
+│   │   ├── config.ts          # Đọc file cấu hình và .env
+│   │   ├── logger.ts          # Quản lý giao diện console / TUI
+│   │   ├── state-manager.ts   # Quản lý State Machine & Checkpoints
+│   │   └── guardrails.ts      # Kiểm duyệt an toàn các lệnh terminal
+│   ├── terminal/              # Quản lý đa Terminal độc lập
+│   │   ├── pty-manager.ts     # Spawn và điều khiển các tiến trình PTY ngầm
+│   │   ├── dev-worker.ts      # Terminal worker điều khiển Claude CLI
+│   │   └── test-runner.ts     # Terminal runner thực thi build / test
+│   ├── graph/                 # Tầng điều phối LangGraph
+│   │   ├── state.ts           # Schema trạng thái của Agent Team
+│   │   ├── nodes/             # Các Node: PO, SA, Dev, Tester
+│   │   └── builder.ts         # Khởi tạo và liên kết các node/edges
+│   └── watchers/              # Lắng nghe file & log events
+│       └── log-parser.ts      # Trích xuất lỗi từ terminal test
+├── .devteam/                  # Thư mục lưu trạng thái và tasks (Git Ignored)
+│   ├── MASTER_PLAN.json
+│   └── tasks/
+└── docs/                      # Tài liệu dự án (BRD, SRD, PLAN)
 ```
