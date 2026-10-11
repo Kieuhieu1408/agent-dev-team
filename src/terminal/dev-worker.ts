@@ -2,6 +2,8 @@ import { PTYManager } from './pty-manager.js';
 import { settings } from '../config/settings.js';
 import { Logger } from '../core/logger.js';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 export interface DevWorkerResult {
   success: boolean;
@@ -15,6 +17,20 @@ export class DevWorker {
 
   constructor() {
     this.ptyManager = PTYManager.getInstance();
+  }
+
+  private resolveClaudeExecutable(): string {
+    const candidates = [
+      path.join(os.homedir(), '.local', 'bin', 'claude'),
+      '/usr/local/bin/claude',
+      '/opt/homebrew/bin/claude',
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        return c;
+      }
+    }
+    return 'claude';
   }
 
   public async runPrompt(
@@ -36,8 +52,8 @@ export class DevWorker {
       CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: '1',
     };
 
-    // Use claude command
-    const command = 'claude';
+    // Resolve claude binary path
+    const command = this.resolveClaudeExecutable();
     const args = ['-p', prompt, '--dangerously-skip-permissions'];
     if (config.model) {
       args.push('--model', config.model);

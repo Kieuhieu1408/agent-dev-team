@@ -121,27 +121,50 @@ async function runFeatureDev(intent: string): Promise<void> {
   }
 }
 
+function isCommandKeyword(token: string): boolean {
+  const t = token.toLowerCase();
+  return [
+    '/provider', 'provider',
+    '/api-key', 'api-key', '/apikey', 'apikey',
+    '/project', 'project',
+    '/model', 'model',
+    '/status', 'status',
+    '/tasks', 'tasks',
+    '/logs', 'logs',
+    '/run', 'run',
+    '/help', 'help',
+    '/exit', 'exit', '/quit', 'quit',
+    'cat', 'config', '/config'
+  ].includes(t);
+}
+
 export async function processCommandLine(line: string): Promise<boolean> {
   const trimmed = line.trim();
   if (!trimmed) return true;
 
-  if (trimmed === '/exit' || trimmed === '/quit') {
+  const lower = trimmed.toLowerCase();
+
+  // Exit
+  if (lower === '/exit' || lower === 'exit' || lower === '/quit' || lower === 'quit') {
     PTYManager.getInstance().killAll();
     console.log(chalk.cyan('Tạm biệt! Hẹn gặp lại. 👋'));
     return false;
   }
 
-  if (trimmed === '/help') {
+  // Help
+  if (lower === '/help' || lower === 'help') {
     printHelp();
     return true;
   }
 
-  if (trimmed === '/status') {
+  // Status
+  if (lower === '/status' || lower === 'status') {
     printStatus();
     return true;
   }
 
-  if (trimmed === '/tasks') {
+  // Tasks
+  if (lower === '/tasks' || lower === 'tasks') {
     const cfg = settings.get();
     const stateMgr = new StateManager(cfg.projectPath);
     const plan = stateMgr.getPlan();
@@ -160,7 +183,8 @@ export async function processCommandLine(line: string): Promise<boolean> {
     return true;
   }
 
-  if (trimmed === '/logs') {
+  // Logs
+  if (lower === '/logs' || lower === 'logs') {
     const logs = PTYManager.getInstance().getAllLogs();
     const keys = Object.keys(logs);
     if (keys.length === 0) {
@@ -174,112 +198,126 @@ export async function processCommandLine(line: string): Promise<boolean> {
     return true;
   }
 
-  // Parse slash commands, including chained ones e.g. "/provider 9router /api-key sk-xxx /project du-an-1"
-  if (trimmed.startsWith('/')) {
-    const tokens = trimmed.split(/\s+/);
-    let i = 0;
-    let handledAny = false;
-
-    while (i < tokens.length) {
-      const token = tokens[i];
-
-      if (token === '/provider') {
-        const providerName = tokens[i + 1];
-        if (providerName && !providerName.startsWith('/')) {
-          const customUrl = tokens[i + 2] && !tokens[i + 2].startsWith('/') ? tokens[i + 2] : undefined;
-          settings.setProvider(providerName, customUrl);
-          Logger.success(`Đã cấu hình Provider: ${chalk.bold(providerName)} (${settings.get().providerUrl})`);
-          i += customUrl ? 3 : 2;
-          handledAny = true;
-          continue;
-        } else {
-          Logger.warn('Cú pháp: /provider <tên_provider> [url_tùy_chọn]');
-          i++;
-          continue;
-        }
+  // Cat or Config
+  if (lower === 'config' || lower === '/config' || lower.startsWith('cat ')) {
+    const cfg = settings.get();
+    console.log(chalk.bold.cyan(`\n📄 Cấu hình hiện tại (${cfg.configFilePath}):`));
+    try {
+      if (fs.existsSync(cfg.configFilePath)) {
+        console.log(chalk.white(fs.readFileSync(cfg.configFilePath, 'utf-8')));
+      } else {
+        console.log(JSON.stringify({ provider: cfg.provider, model: cfg.model, apiKey: cfg.apiKey }, null, 2));
       }
-
-      if (token === '/api-key') {
-        const key = tokens[i + 1];
-        if (key && !key.startsWith('/')) {
-          settings.setApiKey(key);
-          const masked = key.length > 8 ? key.slice(0, 6) + '...' + key.slice(-4) : '***';
-          Logger.success(`Đã cấu hình API Key: ${chalk.bold(masked)}`);
-          i += 2;
-          handledAny = true;
-          continue;
-        } else {
-          Logger.warn('Cú pháp: /api-key sk-...');
-          i++;
-          continue;
-        }
-      }
-
-      if (token === '/project') {
-        const rawPath = tokens[i + 1];
-        if (rawPath && !rawPath.startsWith('/')) {
-          const resolved = settings.setProjectPath(rawPath);
-          Logger.success(`Đã mở dự án tại: ${chalk.bold.blueBright(resolved)}`);
-          // Display project summary
-          const summary = fs.readdirSync(resolved);
-          Logger.info(`Số lượng file/thư mục: ${summary.length} (${summary.slice(0, 8).join(', ') || 'thư mục mới'})`);
-          i += 2;
-          handledAny = true;
-          continue;
-        } else {
-          Logger.warn('Cú pháp: /project <đường_dẫn>');
-          i++;
-          continue;
-        }
-      }
-
-      if (token === '/model') {
-        const modelName = tokens[i + 1];
-        if (modelName && !modelName.startsWith('/')) {
-          settings.setModel(modelName);
-          const found = SUPPORTED_MODELS.find((m) => m.name === modelName);
-          const detail = found ? ` (9router: ${found.upstream})` : '';
-          Logger.success(`Đã cấu hình Model: ${chalk.bold(modelName)}${detail} (Lưu vào config.json)`);
-          i += 2;
-          handledAny = true;
-          continue;
-        } else {
-          console.log(`\n${chalk.bold.cyan('🤖 DANH SÁCH MODEL COMBO CỦA 9ROUTER:')}`);
-          for (const m of SUPPORTED_MODELS) {
-            const isCur = m.name === settings.get().model ? chalk.green(' [Đang chọn]') : '';
-            console.log(`  • ${chalk.bold.yellow(m.name)}${isCur}: ${chalk.dim(m.upstream)} (ctx ${m.context} · max ${m.output})`);
-          }
-          console.log(chalk.dim('  Cú pháp đổi model: /model gemini  hoặc  /model claude-sonnet\n'));
-          i++;
-          handledAny = true;
-          continue;
-        }
-      }
-
-      if (token === '/run') {
-        const intent = tokens.slice(i + 1).join(' ');
-        if (intent.trim()) {
-          await runFeatureDev(intent.trim());
-        } else {
-          Logger.warn('Cú pháp: /run <mô_tả_tính_năng>');
-        }
-        return true;
-      }
-
-      // If we don't recognize the token but it starts with /, warn
-      if (token.startsWith('/') && !handledAny) {
-        Logger.warn(`Không nhận diện được lệnh: ${token}. Gõ /help để xem hướng dẫn.`);
-      }
-      i++;
+    } catch {
+      // ignore
     }
-
-    if (handledAny) {
-      return true;
-    }
+    return true;
   }
 
-  // If not a slash command, treat as intent to develop
-  await runFeatureDev(trimmed);
+  // Run feature dev explicitly
+  if (trimmed.startsWith('/run ') || trimmed.startsWith('run ')) {
+    const intent = trimmed.replace(/^(\/run|run)\s+/, '').trim();
+    if (intent) {
+      await runFeatureDev(intent);
+    } else {
+      Logger.warn('Cú pháp: run <mô_tả_tính_năng>');
+    }
+    return true;
+  }
+
+  // Parse commands (supports both `/command` and `command`, and chained commands)
+  const tokens = trimmed.split(/\s+/);
+  let i = 0;
+  let handledAny = false;
+
+  while (i < tokens.length) {
+    const token = tokens[i];
+    const tokLower = token.toLowerCase();
+
+    if (tokLower === '/provider' || tokLower === 'provider') {
+      const providerName = tokens[i + 1];
+      if (providerName && !isCommandKeyword(providerName)) {
+        const customUrl = tokens[i + 2] && !isCommandKeyword(tokens[i + 2]) ? tokens[i + 2] : undefined;
+        settings.setProvider(providerName, customUrl);
+        Logger.success(`Đã cấu hình Provider: ${chalk.bold(providerName)} (${settings.get().providerUrl})`);
+        i += customUrl ? 3 : 2;
+        handledAny = true;
+        continue;
+      } else {
+        Logger.warn('Cú pháp: provider <tên_provider> [url_tùy_chọn]');
+        i++;
+        continue;
+      }
+    }
+
+    if (tokLower === '/api-key' || tokLower === 'api-key' || tokLower === '/apikey' || tokLower === 'apikey') {
+      const key = tokens[i + 1];
+      if (key && !isCommandKeyword(key)) {
+        settings.setApiKey(key);
+        const masked = key.length > 8 ? key.slice(0, 6) + '...' + key.slice(-4) : '***';
+        Logger.success(`Đã cấu hình API Key: ${chalk.bold(masked)} (Lưu vào config.json)`);
+        i += 2;
+        handledAny = true;
+        continue;
+      } else {
+        Logger.warn('Cú pháp: api-key sk-...');
+        i++;
+        continue;
+      }
+    }
+
+    if (tokLower === '/project' || tokLower === 'project') {
+      const rawPath = tokens[i + 1];
+      // Only reject if rawPath is an actual command keyword, NOT because it starts with '/'
+      if (rawPath && !isCommandKeyword(rawPath)) {
+        const resolved = settings.setProjectPath(rawPath);
+        Logger.success(`Đã mở dự án tại: ${chalk.bold.blueBright(resolved)}`);
+        const summary = fs.readdirSync(resolved);
+        Logger.info(`Số lượng file/thư mục: ${summary.length} (${summary.slice(0, 8).join(', ') || 'thư mục mới'})`);
+        i += 2;
+        handledAny = true;
+        continue;
+      } else {
+        Logger.warn('Cú pháp: project <đường_dẫn>');
+        i++;
+        continue;
+      }
+    }
+
+    if (tokLower === '/model' || tokLower === 'model') {
+      const modelName = tokens[i + 1];
+      if (modelName && !isCommandKeyword(modelName)) {
+        settings.setModel(modelName);
+        const found = SUPPORTED_MODELS.find((m) => m.name === modelName);
+        const detail = found ? ` (9router: ${found.upstream})` : '';
+        Logger.success(`Đã cấu hình Model: ${chalk.bold(modelName)}${detail} (Lưu vào config.json)`);
+        i += 2;
+        handledAny = true;
+        continue;
+      } else {
+        console.log(`\n${chalk.bold.cyan('🤖 DANH SÁCH MODEL COMBO CỦA 9ROUTER:')}`);
+        for (const m of SUPPORTED_MODELS) {
+          const isCur = m.name === settings.get().model ? chalk.green(' [Đang chọn]') : '';
+          console.log(`  • ${chalk.bold.yellow(m.name)}${isCur}: ${chalk.dim(m.upstream)} (ctx ${m.context} · max ${m.output})`);
+        }
+        console.log(chalk.dim('  Cú pháp đổi model: model gemini  hoặc  model claude-sonnet\n'));
+        i++;
+        handledAny = true;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  if (handledAny) {
+    return true;
+  }
+
+  // If user entered text that is neither a recognized command nor 'run ...', inform clearly
+  console.log(chalk.yellow(`\n⚠️  Không nhận diện được lệnh: "${trimmed}"`));
+  console.log(chalk.dim('  • Hệ thống đang ở chế độ Cài đặt (Settings Mode). Gõ /help để xem trợ giúp.'));
+  console.log(chalk.cyan(`  • Để BẮT ĐẦU PHÁT TRIỂN TÍNH NĂNG, vui lòng gõ: ${chalk.bold(`run ${trimmed}`)}\n`));
   return true;
 }
 

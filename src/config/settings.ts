@@ -48,7 +48,7 @@ export const SUPPORTED_MODELS: ModelOption[] = [
 ];
 
 const DEFAULT_PROVIDER_URLS: Record<string, string> = {
-  '9router': 'https://9router.com/v1',
+  '9router': 'http://localhost:20128/v1',
   'openrouter': 'https://openrouter.ai/api/v1',
   'anthropic': 'https://api.anthropic.com/v1',
   'openai': 'https://api.openai.com/v1',
@@ -75,10 +75,15 @@ class SettingsManager {
     const saved = this.loadConfigFile(this.activeConfigPath);
 
     const provider = saved.provider || process.env.LLM_PROVIDER || '9router';
-    const providerUrl =
+    let providerUrl =
       process.env.LLM_PROVIDER_URL ||
       DEFAULT_PROVIDER_URLS[provider.toLowerCase()] ||
-      'https://9router.com/v1';
+      'http://localhost:20128/v1';
+
+    // Normalize any legacy 9router marketing URL to local gateway
+    if (provider.toLowerCase() === '9router' && (providerUrl.includes('9router.com') || !providerUrl)) {
+      providerUrl = 'http://localhost:20128/v1';
+    }
 
     const apiKey =
       saved.apiKey ||

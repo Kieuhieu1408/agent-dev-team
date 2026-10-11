@@ -1,5 +1,8 @@
 import * as pty from 'node-pty';
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { Logger } from '../core/logger.js';
 
 export interface SpawnSessionOptions {
@@ -29,6 +32,7 @@ export class PTYManager extends EventEmitter {
 
   private constructor() {
     super();
+    this.ensureSpawnHelperExecutable();
   }
 
   public static getInstance(): PTYManager {
@@ -38,7 +42,27 @@ export class PTYManager extends EventEmitter {
     return PTYManager.instance;
   }
 
+  private ensureSpawnHelperExecutable(): void {
+    try {
+      const candidates = [
+        path.join(process.cwd(), 'node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper'),
+        path.join(process.cwd(), 'node_modules/node-pty/prebuilds/darwin-x64/spawn-helper'),
+      ];
+      for (const p of candidates) {
+        if (fs.existsSync(p)) {
+          const stats = fs.statSync(p);
+          if ((stats.mode & 0o111) === 0) {
+            fs.chmodSync(p, 0o755);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   public spawnSession(options: SpawnSessionOptions): TerminalSession {
+    this.ensureSpawnHelperExecutable();
     const { name, command, args = [], cwd, env = {}, onData } = options;
 
     // Terminate existing session with the same name if exists
@@ -46,9 +70,25 @@ export class PTYManager extends EventEmitter {
       this.killSession(name);
     }
 
+    const homeDir = os.homedir();
+    const extraPaths = [
+      path.join(homeDir, '.local', 'bin'),
+      path.join(homeDir, '.nvm/versions/node', process.version, 'bin'),
+      '/opt/homebrew/bin',
+      '/usr/local/bin',
+      '/usr/bin',
+      '/bin',
+      '/usr/sbin',
+      '/sbin',
+    ];
+
+    const currentPath = process.env.PATH || '';
+    const enrichedPath = `${extraPaths.join(':')}:${currentPath}`;
+
     const mergedEnv = {
       ...process.env,
       ...env,
+      PATH: enrichedPath,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
     } as Record<string, string>;
