@@ -39,6 +39,9 @@ export class DevWorker {
     // Use claude command
     const command = 'claude';
     const args = ['-p', prompt, '--dangerously-skip-permissions'];
+    if (config.model) {
+      args.push('--model', config.model);
+    }
 
     this.ptyManager.spawnSession({
       name: this.sessionName,

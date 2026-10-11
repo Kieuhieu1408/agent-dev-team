@@ -4,7 +4,7 @@ import readline from 'readline';
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs';
-import { settings } from './config/settings.js';
+import { settings, SUPPORTED_MODELS } from './config/settings.js';
 import { Logger } from './core/logger.js';
 import { StateManager } from './core/state-manager.js';
 import { PTYManager } from './terminal/pty-manager.js';
@@ -15,17 +15,23 @@ function printStatus(): void {
   const stateMgr = new StateManager(cfg.projectPath);
   const plan = stateMgr.getPlan();
 
+  const modelInfo = SUPPORTED_MODELS.find((m) => m.name === cfg.model);
+  const modelDisplay = modelInfo
+    ? `${chalk.bold.yellow(cfg.model)} ${chalk.dim(`(9router: ${modelInfo.upstream} | ctx ${modelInfo.context} · max ${modelInfo.output})`)}`
+    : chalk.bold.yellow(cfg.model);
+
   Logger.divider();
   console.log(chalk.bold.cyan('📊 TRẠNG THÁI HIỆN TẠI (SYSTEM STATUS):'));
-  console.log(`  • ${chalk.bold('Provider:')}    ${chalk.green(cfg.provider)} (${cfg.providerUrl})`);
+  console.log(`  • ${chalk.bold('File Config:')}  ${chalk.dim(cfg.configFilePath)}`);
+  console.log(`  • ${chalk.bold('Provider:')}     ${chalk.green(cfg.provider)} (${cfg.providerUrl})`);
+  console.log(`  • ${chalk.bold('Model:')}        ${modelDisplay}`);
   console.log(
-    `  • ${chalk.bold('API Key:')}     ${
+    `  • ${chalk.bold('API Key:')}      ${
       cfg.apiKey ? chalk.green('✓ Đã cấu hình (' + cfg.apiKey.slice(0, 7) + '...)') : chalk.red('✖ Chưa cấu hình')
     }`
   );
-  console.log(`  • ${chalk.bold('Model:')}       ${chalk.yellow(cfg.model)}`);
-  console.log(`  • ${chalk.bold('Dự án (CWD):')} ${chalk.blueBright(cfg.projectPath)}`);
-  console.log(`  • ${chalk.bold('Tiến trình:')}  ${chalk.magenta(plan.currentPhase)}`);
+  console.log(`  • ${chalk.bold('Dự án (CWD):')}  ${chalk.blueBright(cfg.projectPath)}`);
+  console.log(`  • ${chalk.bold('Tiến trình:')}   ${chalk.magenta(plan.currentPhase)}`);
 
   if (plan.tasks.length > 0) {
     console.log(`\n  ${chalk.bold('Danh sách nhiệm vụ (.devteam/tasks):')}`);
@@ -45,18 +51,34 @@ function printStatus(): void {
 
 function printHelp(): void {
   Logger.divider();
-  console.log(chalk.bold.cyan('📖 HƯỚNG DẪN CÁC LỆNH (COMMANDS):'));
+  console.log(chalk.bold.cyan('📖 BẢNG TRA CỨU CÁC LỆNH (COMMAND REFERENCE):'));
   console.log(`  ${chalk.yellow('/provider <tên> [url]')}   : Chọn AI Provider (9router, openrouter, anthropic, openai)`);
-  console.log(`  ${chalk.yellow('/api-key <key>')}          : Cấu hình API Key (sk-...)`);
+  console.log(`  ${chalk.yellow('/api-key <key>')}          : Cấu hình API Key (sk-...) -> Tự lưu vào config.json`);
   console.log(`  ${chalk.yellow('/project <đường_dẫn>')}     : Mở/chọn thư mục dự án (hỗ trợ hieukq/desktop/du-an-1, ~)`);
-  console.log(`  ${chalk.yellow('/model <tên_model>')}      : Chọn Model (claude-3-5-sonnet, claude-3-7-sonnet, gpt-4o)`);
-  console.log(`  ${chalk.yellow('/status')}                 : Xem cấu hình và tiến độ các task`);
+  console.log(`  ${chalk.yellow('/model [tên_model]')}      : Đổi model (gemini [mặc định], claude-sonnet) hoặc xem danh sách`);
+  console.log(`  ${chalk.yellow('/status')}                 : Xem cấu hình, model hiện tại, dự án và tiến độ`);
   console.log(`  ${chalk.yellow('/tasks')}                  : Xem danh sách task chi tiết`);
-  console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test)`);
+  console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test Runner)`);
   console.log(`  ${chalk.yellow('/run <yêu cầu>')}          : Chạy workflow phát triển tính năng`);
   console.log(`  ${chalk.yellow('<yêu cầu tính năng>')}     : Gõ trực tiếp yêu cầu bất kỳ để dev tính năng`);
   console.log(`  ${chalk.yellow('/exit | /quit')}           : Thoát khỏi chương trình`);
-  console.log(chalk.dim('\n  Mẹo: Bạn có thể nhập gộp: `/provider 9router /api-key sk-xxxx /project hieukq/desktop/du-an-1`'));
+
+  console.log(`\n${chalk.bold.cyan('⚙️  CẤU HÌNH FILE (CONFIG FILE):')}`);
+  console.log(`  File ${chalk.bold('config.json')} được lưu tại thư mục làm việc hoặc ~/.devteam/config.json.`);
+  console.log(`  Cấu trúc file cấu hình tối giản (chỉ gồm 3 trường):`);
+  console.log(chalk.dim(`  {
+    "provider": "9router",
+    "model": "gemini",
+    "apiKey": "sk-your-api-key"
+  }`));
+
+  console.log(`\n${chalk.bold.cyan('🤖 2 COMBO MODEL CỦA 9ROUTER HIỆN TẠI:')}`);
+  for (const m of SUPPORTED_MODELS) {
+    const isDef = m.isDefault ? chalk.green(' [Mặc định]') : '';
+    console.log(`  • ${chalk.bold.yellow(m.name)}${isDef}: trỏ tới ${chalk.cyan(m.upstream)} (ctx ${m.context} · max ${m.output})`);
+  }
+
+  console.log(chalk.dim('\n  Mẹo: Bạn có thể gõ gộp: `/provider 9router /api-key sk-xxxx /project hieukq/desktop/du-an-1`'));
   Logger.divider();
 }
 
@@ -215,13 +237,21 @@ export async function processCommandLine(line: string): Promise<boolean> {
         const modelName = tokens[i + 1];
         if (modelName && !modelName.startsWith('/')) {
           settings.setModel(modelName);
-          Logger.success(`Đã cấu hình Model: ${chalk.bold(modelName)}`);
+          const found = SUPPORTED_MODELS.find((m) => m.name === modelName);
+          const detail = found ? ` (9router: ${found.upstream})` : '';
+          Logger.success(`Đã cấu hình Model: ${chalk.bold(modelName)}${detail} (Lưu vào config.json)`);
           i += 2;
           handledAny = true;
           continue;
         } else {
-          Logger.warn('Cú pháp: /model <tên_model>');
+          console.log(`\n${chalk.bold.cyan('🤖 DANH SÁCH MODEL COMBO CỦA 9ROUTER:')}`);
+          for (const m of SUPPORTED_MODELS) {
+            const isCur = m.name === settings.get().model ? chalk.green(' [Đang chọn]') : '';
+            console.log(`  • ${chalk.bold.yellow(m.name)}${isCur}: ${chalk.dim(m.upstream)} (ctx ${m.context} · max ${m.output})`);
+          }
+          console.log(chalk.dim('  Cú pháp đổi model: /model gemini  hoặc  /model claude-sonnet\n'));
           i++;
+          handledAny = true;
           continue;
         }
       }

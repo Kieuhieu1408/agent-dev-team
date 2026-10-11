@@ -29,15 +29,20 @@ Hệ thống hoạt động dựa trên các nguyên lý trọng tâm:
 
 * **Ngôn ngữ:** TypeScript (Node.js >= 18).
 * **CLI Command Entry:** Lệnh `devteam` map vào `./dist/cli.js`.
+* **File Cấu Hình (`config.json`):**
+  * Tối giản chỉ gồm 3 trường: `{ "provider": "9router", "model": "gemini", "apiKey": "sk-..." }`.
+  * Hỗ trợ lưu trữ cục bộ tại `./config.json` hoặc toàn cục tại `~/.devteam/config.json`.
 * **LLM Provider (9Router / OpenAI Compatible):**
-  * `Base URL`: `https://9router.com/v1` (hoặc cấu hình qua `.env`)
-  * Model mặc định: `claude-3-5-sonnet` hoặc `gpt-4o`.
+  * `Base URL`: `https://9router.com/v1`.
+  * **2 Model Combos:**
+    1. `gemini` (Mặc định): upstream `ag/gemini-pro-agent` (Context 1.0M, Max 64k).
+    2. `claude-sonnet`: upstream `ag/claude-sonnet-4-6` (Context 1.0M, Max 128k).
 * **Thư viện chính:**
   * `@langchain/langgraph`: Điều phối đồ thị trạng thái Agent Team.
   * `@langchain/openai`: Kết nối LLM Provider qua chuẩn OpenAI.
   * `node-pty`: Quản lý các tiến trình pseudo-terminal ngầm trên macOS/Linux.
   * `@clack/prompts`: Xây dựng giao diện dòng lệnh TUI trực quan, spinner, prompt.
-  * `dotenv`: Quản lý biến môi trường.
+  * `dotenv`: Quản lý biến môi trường dự phòng.
 
 ---
 

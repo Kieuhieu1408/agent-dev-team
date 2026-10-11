@@ -104,12 +104,19 @@ cd agent-dev-team
 npm install
 ```
 
-3. Cấu hình môi trường:
-Tạo file `.env` ở thư mục gốc:
-```env
-LLM_PROVIDER_URL=https://9router.com/v1
-LLM_API_KEY=sk-your-api-key
+3. Cấu hình hệ thống (`config.json`):
+Tạo file `config.json` ở thư mục dự án (hoặc hệ thống tự động sinh khi chạy lần đầu). File cấu hình tối giản chỉ gồm 3 trường:
+```json
+{
+  "provider": "9router",
+  "model": "gemini",
+  "apiKey": "sk-your-api-key"
+}
 ```
+
+#### 🤖 2 Combo Model của 9Router:
+*   **`gemini` (Mặc định):** Trỏ tới model upstream `ag/gemini-pro-agent` (Context 1.0M, Max output 64k).
+*   **`claude-sonnet`:** Trỏ tới model upstream `ag/claude-sonnet-4-6` (Context 1.0M, Max output 128k).
 
 4. Build và liên kết lệnh CLI:
 ```bash
@@ -124,27 +131,45 @@ npm link
 Di chuyển vào bất kỳ thư mục dự án nào trên máy tính của bạn và chạy lệnh:
 
 ```bash
-# Khởi chạy giao diện điều khiển Terminal
+# Khởi chạy giao diện điều khiển tương tác (Terminal REPL)
 devteam
-
-# Hoặc chạy trực tiếp với một yêu cầu cụ thể
-devteam run "Tạo REST API quản lý người dùng với JWT authentication và unit test"
 ```
 
-### Các lệnh hữu ích:
-*   `devteam status`: Xem trạng thái hiện tại của các terminal và tiến độ các task.
-*   `devteam logs`: Xem output real-time từ các terminal chạy ngầm.
-*   `devteam stop`: Dừng an toàn tất cả các terminal và lưu lại checkpoint.
+### 📖 Bảng Tra Cứu Các Lệnh (Command Reference)
+
+| Lệnh Slash | Cú pháp | Ý nghĩa & Mô tả |
+| :--- | :--- | :--- |
+| `/provider` | `/provider <tên> [url]` | Cấu hình AI Provider (`9router`, `openrouter`, `anthropic`, `openai`) |
+| `/api-key` | `/api-key <key>` | Cấu hình API Key (`sk-...`) và tự động lưu vào `config.json` |
+| `/project` | `/project <đường_dẫn>` | Mở thư mục dự án (hỗ trợ `hieukq/desktop/du-an-1`, `~`, đường dẫn tuyệt đối/tương đối) |
+| `/model` | `/model [tên_model]` | Xem danh sách hoặc chuyển đổi model (`gemini`, `claude-sonnet`) |
+| `/status` | `/status` | Xem trạng thái chi tiết: file config, provider, model, API key, CWD, và tiến độ task |
+| `/tasks` | `/tasks` | Xem danh sách các task chi tiết và tiêu chí nghiệm thu |
+| `/logs` | `/logs` | Xem log real-time từ các terminal chạy ngầm (Claude CLI & Test Runner) |
+| `/run` | `/run <yêu cầu>` | Khởi chạy vòng lặp phát triển tính năng tự động khép kín |
+| `<prompt>` | `<yêu cầu tính năng>` | Gõ trực tiếp yêu cầu bất kỳ tại prompt để bắt đầu dev tính năng |
+| `/help` | `/help` | Hiển thị bảng hướng dẫn cú pháp và thông tin model |
+| `/exit` / `/quit` | `/exit` | Dừng an toàn tất cả terminal chạy ngầm và thoát chương trình |
+
+> 💡 **Mẹo:** Bạn có thể thiết lập nhanh chỉ bằng 1 dòng lệnh gộp:
+> ```text
+> devteam> /provider 9router /api-key sk-xxxx /project hieukq/desktop/du-an-1
+> ```
+> Hoặc truyền tham số trực tiếp từ terminal:
+> ```bash
+> devteam /provider 9router /api-key sk-xxxx /project hieukq/desktop/du-an-1
+> ```
 
 ---
 
 ## 🗺️ Lộ trình Phát triển (Roadmap)
 
 - [x] Thiết kế kiến trúc Multi-Agent & State Machine (BRD, SRD, PLAN).
-- [ ] Xây dựng Core PTY Manager (quản lý đa terminal ngầm).
-- [ ] Tích hợp Claude CLI Driver & Event Parser (tự động bắt lỗi test).
-- [ ] Xây dựng State Engine & Artifacts Manager.
-- [ ] Hoàn thiện CLI/TUI Interactive Console (`devteam`).
+- [x] Xây dựng Core PTY Manager (quản lý đa terminal ngầm với node-pty).
+- [x] Tích hợp Claude CLI Driver & Event Parser (tự động bắt lỗi test).
+- [x] Xây dựng State Engine & Artifacts Manager (`.devteam/tasks/`, `MASTER_PLAN.json`).
+- [x] Hoàn thiện CLI/TUI Interactive Console (`devteam` REPL, Slash Commands).
+- [x] Tối ưu hóa file cấu hình tối giản `config.json` và hỗ trợ các combo model 9Router (`gemini`, `claude-sonnet`).
 - [ ] Thêm chế độ Human-in-the-Loop (HITL) xác nhận lệnh nguy hiểm.
 
 ---

@@ -85,10 +85,13 @@ agent-dev-team/
 ├── package.json
 ├── tsconfig.json
 ├── .env.example               
+├── config.json                # Cấu hình tối giản (provider, model, apiKey)
+├── config.example.json        # Mẫu cấu hình
 ├── src/
 │   ├── cli.ts                 # CLI entry point (Lệnh: devteam)
+│   ├── config/
+│   │   └── settings.ts        # Quản lý config.json & biến môi trường
 │   ├── core/                  # Core modules dùng chung
-│   │   ├── config.ts          # Đọc file cấu hình và .env
 │   │   ├── logger.ts          # Quản lý giao diện console / TUI
 │   │   ├── state-manager.ts   # Quản lý State Machine & Checkpoints
 │   │   └── guardrails.ts      # Kiểm duyệt an toàn các lệnh terminal

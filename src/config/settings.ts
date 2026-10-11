@@ -3,8 +3,14 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 
-// Load initial .env from current directory or home directory
+// Load initial .env if present
 dotenv.config();
+
+export interface DevTeamConfigFile {
+  provider: string;
+  model: string;
+  apiKey: string;
+}
 
 export interface DevTeamConfig {
   provider: string;
@@ -14,7 +20,32 @@ export interface DevTeamConfig {
   projectPath: string;
   maxRetries: number;
   autoConfirm: boolean;
+  configFilePath: string;
 }
+
+export interface ModelOption {
+  name: string;
+  upstream: string;
+  context: string;
+  output: string;
+  isDefault?: boolean;
+}
+
+export const SUPPORTED_MODELS: ModelOption[] = [
+  {
+    name: 'gemini',
+    upstream: 'ag/gemini-pro-agent',
+    context: '1.0M',
+    output: '64k',
+    isDefault: true,
+  },
+  {
+    name: 'claude-sonnet',
+    upstream: 'ag/claude-sonnet-4-6',
+    context: '1M',
+    output: '128k',
+  },
+];
 
 const DEFAULT_PROVIDER_URLS: Record<string, string> = {
   '9router': 'https://9router.com/v1',
@@ -25,41 +56,41 @@ const DEFAULT_PROVIDER_URLS: Record<string, string> = {
 
 class SettingsManager {
   private config: DevTeamConfig;
-  private configFilePath: string;
+  private activeConfigPath: string;
 
   constructor() {
-    const homeDir = os.homedir();
-    const configDir = path.join(homeDir, '.devteam');
-    if (!fs.existsSync(configDir)) {
-      try {
-        fs.mkdirSync(configDir, { recursive: true });
-      } catch {
-        // ignore
-      }
-    }
-    this.configFilePath = path.join(configDir, 'config.json');
+    const cwdConfig = path.join(process.cwd(), 'config.json');
+    const homeConfigDir = path.join(os.homedir(), '.devteam');
+    const homeConfig = path.join(homeConfigDir, 'config.json');
 
-    // Load saved settings if any
-    const saved = this.loadSavedConfig();
+    // Prefer local ./config.json if exists, else ~/.devteam/config.json, else create ./config.json
+    if (fs.existsSync(cwdConfig)) {
+      this.activeConfigPath = cwdConfig;
+    } else if (fs.existsSync(homeConfig)) {
+      this.activeConfigPath = homeConfig;
+    } else {
+      this.activeConfigPath = cwdConfig;
+    }
+
+    const saved = this.loadConfigFile(this.activeConfigPath);
 
     const provider = saved.provider || process.env.LLM_PROVIDER || '9router';
     const providerUrl =
-      saved.providerUrl ||
       process.env.LLM_PROVIDER_URL ||
       DEFAULT_PROVIDER_URLS[provider.toLowerCase()] ||
       'https://9router.com/v1';
+
     const apiKey =
       saved.apiKey ||
       process.env.LLM_API_KEY ||
       process.env.ANTHROPIC_API_KEY ||
       process.env.OPENAI_API_KEY ||
       '';
-    const model =
-      saved.model ||
-      process.env.LLM_MODEL ||
-      'claude-3-5-sonnet';
+
+    // Default model is gemini (9router)
+    const model = saved.model || process.env.LLM_MODEL || 'gemini';
+
     const projectPath =
-      saved.projectPath ||
       process.env.TARGET_PROJECT_DIR ||
       process.cwd();
 
@@ -71,14 +102,29 @@ class SettingsManager {
       projectPath: this.resolveProjectPath(projectPath),
       maxRetries: parseInt(process.env.MAX_SELF_HEALING_RETRIES || '3', 10),
       autoConfirm: process.env.AUTO_CONFIRM === 'true',
+      configFilePath: this.activeConfigPath,
     };
+
+    // If config file did not exist, write initial template with only provider, model, apiKey
+    if (!fs.existsSync(this.activeConfigPath)) {
+      this.saveConfig();
+    }
+
+    // Synchronize environment variables for sub-processes and Claude CLI
+    this.syncEnvironment();
   }
 
-  private loadSavedConfig(): Partial<DevTeamConfig> {
+  private loadConfigFile(filePath: string): Partial<DevTeamConfigFile> {
     try {
-      if (fs.existsSync(this.configFilePath)) {
-        const raw = fs.readFileSync(this.configFilePath, 'utf-8');
-        return JSON.parse(raw);
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(raw);
+        return {
+          provider: parsed.provider,
+          model: parsed.model,
+          // Support apiKey, aplkey, or api_key
+          apiKey: parsed.apiKey || parsed.aplkey || parsed.api_key || '',
+        };
       }
     } catch {
       // ignore
@@ -88,10 +134,27 @@ class SettingsManager {
 
   public saveConfig(): void {
     try {
-      fs.writeFileSync(this.configFilePath, JSON.stringify(this.config, null, 2), 'utf-8');
+      // Config file contains ONLY provider, model and apiKey as requested
+      const fileContent: DevTeamConfigFile = {
+        provider: this.config.provider,
+        model: this.config.model,
+        apiKey: this.config.apiKey,
+      };
+      fs.writeFileSync(this.activeConfigPath, JSON.stringify(fileContent, null, 2), 'utf-8');
     } catch {
       // ignore
     }
+  }
+
+  private syncEnvironment(): void {
+    process.env.LLM_PROVIDER = this.config.provider;
+    process.env.LLM_PROVIDER_URL = this.config.providerUrl;
+    process.env.LLM_MODEL = this.config.model;
+    process.env.LLM_API_KEY = this.config.apiKey;
+    process.env.ANTHROPIC_BASE_URL = this.config.providerUrl;
+    process.env.ANTHROPIC_API_KEY = this.config.apiKey;
+    process.env.OPENAI_API_BASE = this.config.providerUrl;
+    process.env.OPENAI_API_KEY = this.config.apiKey;
   }
 
   public get(): DevTeamConfig {
@@ -109,24 +172,19 @@ class SettingsManager {
       this.config.providerUrl = providerName;
       this.config.provider = 'custom';
     }
-    // Update process.env for Claude CLI & sub-processes
-    process.env.LLM_PROVIDER = this.config.provider;
-    process.env.LLM_PROVIDER_URL = this.config.providerUrl;
-    process.env.ANTHROPIC_BASE_URL = this.config.providerUrl;
+    this.syncEnvironment();
     this.saveConfig();
   }
 
   public setApiKey(apiKey: string): void {
     this.config.apiKey = apiKey.trim();
-    process.env.LLM_API_KEY = this.config.apiKey;
-    process.env.ANTHROPIC_API_KEY = this.config.apiKey;
-    process.env.OPENAI_API_KEY = this.config.apiKey;
+    this.syncEnvironment();
     this.saveConfig();
   }
 
   public setModel(model: string): void {
     this.config.model = model.trim();
-    process.env.LLM_MODEL = this.config.model;
+    this.syncEnvironment();
     this.saveConfig();
   }
 
@@ -137,7 +195,6 @@ class SettingsManager {
     }
     this.config.projectPath = resolved;
     process.env.TARGET_PROJECT_DIR = resolved;
-    this.saveConfig();
     return resolved;
   }
 

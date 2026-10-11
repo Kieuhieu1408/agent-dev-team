@@ -84,6 +84,8 @@
 agent-dev-team/
 ├── package.json
 ├── tsconfig.json
+├── config.json                # File cấu hình (chỉ gồm: provider, model, apiKey)
+├── config.example.json        # File mẫu cấu hình
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -94,7 +96,7 @@ agent-dev-team/
 ├── src/
 │   ├── cli.ts                 # CLI entry point (lệnh `devteam`)
 │   ├── config/
-│   │   └── settings.ts        # Đọc cấu hình môi trường và tuỳ chọn người dùng
+│   │   └── settings.ts        # Quản lý config.json (chỉ có: provider, model, apiKey)
 │   ├── core/
 │   │   ├── state-manager.ts   # State Machine và lưu trữ checkpoint
 │   │   ├── logger.ts          # Định dạng output màn hình TUI (@clack/prompts)
