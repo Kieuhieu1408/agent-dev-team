@@ -12,6 +12,7 @@ import { StateManager } from './core/state-manager.js';
 import { PTYManager } from './terminal/pty-manager.js';
 import { buildDevTeamGraph } from './graph/builder.js';
 import { HITL } from './core/hitl.js';
+import { cliCompleter, historyManager } from './core/completer.js';
 
 let activeRl: readline.Interface | null = null;
 
@@ -124,7 +125,8 @@ function printHelp(): void {
     console.log(`  • ${chalk.bold.yellow(m.name)}${isDef}: trỏ tới ${chalk.cyan(m.upstream)} (ctx ${m.context} · max ${m.output})`);
   }
 
-  console.log(chalk.dim('\n  Mẹo: Bạn có thể gõ gộp: `/provider 9router /api-key sk-xxxx /project hieukq/desktop/du-an-1`'));
+  console.log(chalk.dim('\n  Mẹo: Nhấn phím <Tab> để tự động điền tên dự án (du-an-1...), đường dẫn hoặc lệnh slash.'));
+  console.log(chalk.dim('  Mẹo: Bạn có thể gõ gộp: `/provider 9router /api-key sk-xxxx /project hieukq/desktop/du-an-1`'));
   Logger.divider();
 }
 
@@ -247,6 +249,8 @@ export function handleCd(rawArg: string): boolean {
 
     previousDir = currentProject;
     settings.setProjectPath(targetPath);
+    historyManager.addWord(path.basename(targetPath));
+    historyManager.addWord(arg);
     try {
       process.chdir(targetPath);
     } catch {}
@@ -430,6 +434,8 @@ export async function checkProjectIntent(input: string): Promise<boolean> {
 
   if (confirmed) {
     settings.setProjectPath(candidateDir);
+    historyManager.addWord(folderName);
+    historyManager.addWord(candidateDir);
     updatePrompt();
     Logger.success(`Đã chuyển sang dự án: ${chalk.bold.blueBright(candidateDir)} (Đã cập nhật file config)`);
 
@@ -657,6 +663,8 @@ export async function processCommandLine(line: string): Promise<boolean> {
       const rawPath = tokens[i + 1];
       if (rawPath && !isCommandKeyword(rawPath)) {
         const resolved = settings.setProjectPath(rawPath);
+        historyManager.addWord(path.basename(resolved));
+        historyManager.addWord(rawPath);
         updatePrompt();
         Logger.success(`Đã mở dự án tại: ${chalk.bold.blueBright(resolved)}`);
         const summary = fs.readdirSync(resolved);
@@ -734,6 +742,7 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
     input: process.stdin,
     output: process.stdout,
     prompt: getPromptString(),
+    completer: cliCompleter,
   });
 
   activeRl = rl;
@@ -742,6 +751,7 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
   rl.prompt();
 
   rl.on('line', async (line) => {
+    historyManager.addLine(line);
     if (isExecuting || HITL.hasPendingQuestion()) {
       HITL.queueInput(line);
       return;
