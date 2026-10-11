@@ -1,5 +1,12 @@
 import { AgentState } from './state.js';
 
+export function routeAfterArchitect(state: AgentState): string {
+  if (state.isComplete || state.currentPhase === 'IDLE' || state.error) {
+    return '__end__';
+  }
+  return 'dev';
+}
+
 export function routeAfterTester(state: AgentState): string {
   if (state.isComplete || state.currentPhase === 'DONE') {
     return '__end__';
@@ -11,3 +18,4 @@ export function routeAfterTester(state: AgentState): string {
 
   return '__end__';
 }
+

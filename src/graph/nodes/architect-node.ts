@@ -2,6 +2,7 @@ import { AgentState } from '../state.js';
 import { LLMFactory } from '../../core/llm-factory.js';
 import { StateManager } from '../../core/state-manager.js';
 import { Logger } from '../../core/logger.js';
+import { HITL } from '../../core/hitl.js';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
 export async function architectNode(state: AgentState): Promise<Partial<AgentState>> {
@@ -37,6 +38,21 @@ Hãy đưa ra chỉ dẫn kiến trúc.`;
 
   Logger.info(`Kiến trúc: ${archSummary}`);
 
+  // Human-in-the-Loop Confirmation Gate
+  const approved = await HITL.confirmPlanningDone(plan.tasks, archSummary);
+
+  if (!approved) {
+    Logger.warn('⛔ Người dùng đã tạm dừng hoặc không đồng ý kế hoạch. Quay lại trạng thái chờ (IDLE).');
+    stateManager.setPhase('IDLE');
+    return {
+      architectureSummary: archSummary,
+      currentPhase: 'IDLE',
+      isComplete: true,
+      error: 'Kế hoạch đã tạm dừng do người dùng không đồng ý bước xác nhận.',
+    };
+  }
+
+  Logger.success('✓ Kế hoạch đã được phê duyệt. Bắt đầu giai đoạn lập trình (DEV_CODING)...');
   stateManager.setPhase('DEV_CODING');
 
   return {

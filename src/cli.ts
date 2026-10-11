@@ -9,6 +9,7 @@ import { Logger } from './core/logger.js';
 import { StateManager } from './core/state-manager.js';
 import { PTYManager } from './terminal/pty-manager.js';
 import { buildDevTeamGraph } from './graph/builder.js';
+import { HITL } from './core/hitl.js';
 
 function printStatus(): void {
   const cfg = settings.get();
@@ -22,16 +23,23 @@ function printStatus(): void {
 
   Logger.divider();
   console.log(chalk.bold.cyan('📊 TRẠNG THÁI HIỆN TẠI (SYSTEM STATUS):'));
-  console.log(`  • ${chalk.bold('File Config:')}  ${chalk.dim(cfg.configFilePath)}`);
-  console.log(`  • ${chalk.bold('Provider:')}     ${chalk.green(cfg.provider)} (${cfg.providerUrl})`);
-  console.log(`  • ${chalk.bold('Model:')}        ${modelDisplay}`);
+  console.log(`  • ${chalk.bold('File Config:')}   ${chalk.dim(cfg.configFilePath)}`);
+  console.log(`  • ${chalk.bold('Provider:')}      ${chalk.green(cfg.provider)} (${cfg.providerUrl})`);
+  console.log(`  • ${chalk.bold('Model:')}         ${modelDisplay}`);
   console.log(
-    `  • ${chalk.bold('API Key:')}      ${
+    `  • ${chalk.bold('API Key:')}       ${
       cfg.apiKey ? chalk.green('✓ Đã cấu hình (' + cfg.apiKey.slice(0, 7) + '...)') : chalk.red('✖ Chưa cấu hình')
     }`
   );
-  console.log(`  • ${chalk.bold('Dự án (CWD):')}  ${chalk.blueBright(cfg.projectPath)}`);
-  console.log(`  • ${chalk.bold('Tiến trình:')}   ${chalk.magenta(plan.currentPhase)}`);
+  console.log(
+    `  • ${chalk.bold('Human-in-Loop:')} ${
+      cfg.autoConfirm
+        ? chalk.yellow('✖ TẮT (Tự động duyệt mọi bước)')
+        : chalk.green('✓ BẬT (Xác nhận trước khi Dev & Test)')
+    }`
+  );
+  console.log(`  • ${chalk.bold('Dự án (CWD):')}   ${chalk.blueBright(cfg.projectPath)}`);
+  console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
 
   if (plan.tasks.length > 0) {
     console.log(`\n  ${chalk.bold('Danh sách nhiệm vụ (.devteam/tasks):')}`);
@@ -56,6 +64,7 @@ function printHelp(): void {
   console.log(`  ${chalk.yellow('/api-key <key>')}          : Cấu hình API Key (sk-...) -> Tự lưu vào config.json`);
   console.log(`  ${chalk.yellow('/project <đường_dẫn>')}     : Mở/chọn thư mục dự án (hỗ trợ hieukq/desktop/du-an-1, ~)`);
   console.log(`  ${chalk.yellow('/model [tên_model]')}      : Đổi model (gemini [mặc định], claude-sonnet) hoặc xem danh sách`);
+  console.log(`  ${chalk.yellow('/autoconfirm [on|off]')}   : Bật/tắt tự động duyệt (mặc định tắt: hỏi xác nhận HITL)`);
   console.log(`  ${chalk.yellow('/status')}                 : Xem cấu hình, model hiện tại, dự án và tiến độ`);
   console.log(`  ${chalk.yellow('/tasks')}                  : Xem danh sách task chi tiết`);
   console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test Runner)`);
@@ -83,6 +92,8 @@ function printHelp(): void {
   Logger.divider();
 }
 
+let isExecuting = false;
+
 async function runFeatureDev(intent: string): Promise<void> {
   const cfg = settings.get();
 
@@ -91,6 +102,7 @@ async function runFeatureDev(intent: string): Promise<void> {
     return;
   }
 
+  isExecuting = true;
   Logger.divider();
   Logger.info(`Bắt đầu phát triển tính năng cho dự án: ${chalk.bold.blueBright(cfg.projectPath)}`);
   Logger.info(`Mục tiêu: "${chalk.bold.white(intent)}"`);
@@ -119,6 +131,8 @@ async function runFeatureDev(intent: string): Promise<void> {
     Logger.divider();
   } catch (err: any) {
     Logger.error(`Lỗi trong quá trình điều phối: ${err.message}`);
+  } finally {
+    isExecuting = false;
   }
 }
 
@@ -129,6 +143,7 @@ function isCommandKeyword(token: string): boolean {
     '/api-key', 'api-key', '/apikey', 'apikey',
     '/project', 'project',
     '/model', 'model',
+    '/autoconfirm', 'autoconfirm',
     '/status', 'status',
     '/tasks', 'tasks',
     '/logs', 'logs',
@@ -162,6 +177,28 @@ export async function processCommandLine(line: string): Promise<boolean> {
     PTYManager.getInstance().killAll();
     console.log(chalk.cyan('Tạm biệt! Hẹn gặp lại. 👋'));
     return false;
+  }
+
+  // Autoconfirm
+  if (lower === 'autoconfirm' || lower === '/autoconfirm' || lower.startsWith('autoconfirm ') || lower.startsWith('/autoconfirm ')) {
+    const parts = trimmed.split(/\s+/);
+    if (parts.length > 1) {
+      const mode = parts[1].toLowerCase();
+      if (mode === 'on' || mode === 'true' || mode === '1') {
+        settings.setAutoConfirm(true);
+        Logger.warn('Đã BẬT Auto-Confirm (Bỏ qua câu hỏi Human-in-the-Loop, tự động duyệt mọi bước).');
+      } else if (mode === 'off' || mode === 'false' || mode === '0') {
+        settings.setAutoConfirm(false);
+        Logger.success('Đã TẮT Auto-Confirm (BẬT Human-in-the-Loop, sẽ hỏi xác nhận trước khi Dev & Test).');
+      } else {
+        Logger.warn('Cú pháp: autoconfirm on | autoconfirm off');
+      }
+    } else {
+      const cur = settings.get().autoConfirm;
+      Logger.info(`Chế độ Auto-Confirm hiện tại: ${cur ? chalk.yellow('BẬT (Tự duyệt)') : chalk.green('TẮT (Hỏi xác nhận HITL)')}`);
+      console.log(chalk.dim('  Dùng `autoconfirm on` hoặc `autoconfirm off` để thay đổi.'));
+    }
+    return true;
   }
 
   // Help
@@ -350,22 +387,52 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
     prompt: chalk.cyan.bold('devteam> '),
   });
 
+  HITL.setInteractiveMode(true);
+
   rl.prompt();
 
   rl.on('line', async (line) => {
+    if (isExecuting || HITL.hasPendingQuestion()) {
+      HITL.queueInput(line);
+      return;
+    }
+
     try {
       const shouldContinue = await processCommandLine(line);
       if (!shouldContinue) {
+        HITL.setInteractiveMode(false);
         rl.close();
         process.exit(0);
       }
     } catch (e: any) {
       Logger.error(`Lỗi: ${e.message}`);
     }
-    rl.prompt();
+
+    // Process any queued commands that arrived while execution was busy
+    while (!isExecuting && !HITL.hasPendingQuestion() && HITL.hasQueuedInput()) {
+      const nextLine = HITL.popQueuedInput();
+      if (nextLine !== undefined && nextLine.trim()) {
+        try {
+          const cont = await processCommandLine(nextLine);
+          if (!cont) {
+            HITL.setInteractiveMode(false);
+            rl.close();
+            process.exit(0);
+          }
+        } catch (e: any) {
+          Logger.error(`Lỗi: ${e.message}`);
+        }
+      }
+    }
+
+    // Only prompt when execution is idle and no HITL question is pending
+    if (!isExecuting && !HITL.hasPendingQuestion()) {
+      rl.prompt();
+    }
   });
 
   rl.on('close', () => {
+    HITL.setInteractiveMode(false);
     PTYManager.getInstance().killAll();
     process.exit(0);
   });

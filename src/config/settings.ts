@@ -63,16 +63,25 @@ class SettingsManager {
     const homeConfigDir = path.join(os.homedir(), '.devteam');
     const homeConfig = path.join(homeConfigDir, 'config.json');
 
-    // Prefer local ./config.json if exists, else ~/.devteam/config.json, else create ./config.json
-    if (fs.existsSync(cwdConfig)) {
-      this.activeConfigPath = cwdConfig;
-    } else if (fs.existsSync(homeConfig)) {
-      this.activeConfigPath = homeConfig;
-    } else {
-      this.activeConfigPath = cwdConfig;
+    let activePath = cwdConfig;
+    let saved = this.loadConfigFile(cwdConfig);
+
+    // If local config has no apiKey, fallback to ~/.devteam/config.json if it has apiKey
+    if (!saved.apiKey && fs.existsSync(homeConfig)) {
+      const homeSaved = this.loadConfigFile(homeConfig);
+      if (homeSaved.apiKey) {
+        activePath = homeConfig;
+        saved = homeSaved;
+      } else if (!fs.existsSync(cwdConfig)) {
+        activePath = homeConfig;
+        saved = homeSaved;
+      }
+    } else if (!fs.existsSync(cwdConfig) && fs.existsSync(homeConfig)) {
+      activePath = homeConfig;
+      saved = this.loadConfigFile(homeConfig);
     }
 
-    const saved = this.loadConfigFile(this.activeConfigPath);
+    this.activeConfigPath = activePath;
 
     const provider = saved.provider || process.env.LLM_PROVIDER || '9router';
     let providerUrl =
@@ -175,6 +184,10 @@ class SettingsManager {
 
   public get(): DevTeamConfig {
     return { ...this.config };
+  }
+
+  public setAutoConfirm(enabled: boolean): void {
+    this.config.autoConfirm = enabled;
   }
 
   public setProvider(providerName: string, customUrl?: string): void {

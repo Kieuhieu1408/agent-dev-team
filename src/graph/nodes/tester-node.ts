@@ -3,6 +3,7 @@ import { StateManager } from '../../core/state-manager.js';
 import { TestRunner } from '../../terminal/test-runner.js';
 import { Logger } from '../../core/logger.js';
 import { settings } from '../../config/settings.js';
+import { HITL } from '../../core/hitl.js';
 
 export async function testerNode(state: AgentState): Promise<Partial<AgentState>> {
   const stateManager = new StateManager(state.projectPath);
@@ -68,6 +69,25 @@ export async function testerNode(state: AgentState): Promise<Partial<AgentState>
         isComplete: true,
         lastTestResult: result,
         error: `Task ${currentTask.id} thất bại sau ${newRetryCount} lần tự sửa lỗi.`,
+      };
+    }
+
+    const errorSummary = result.bugReport?.extractedError || result.output || 'Kiểm thử thất bại.';
+    const approveSelfHealing = await HITL.confirmSelfHealing(
+      currentTask.retryCount,
+      config.maxRetries,
+      errorSummary
+    );
+
+    if (!approveSelfHealing) {
+      Logger.warn(`⛔ Người dùng đã từ chối kích hoạt Self-Healing cho Task [${currentTask.id}].`);
+      stateManager.updateTaskStatus(currentTask.id, 'FAILED');
+      stateManager.setPhase('DONE');
+      return {
+        currentPhase: 'DONE',
+        isComplete: true,
+        lastTestResult: result,
+        error: `Quá trình tự sửa lỗi cho task ${currentTask.id} bị từ chối bởi người dùng.`,
       };
     }
 

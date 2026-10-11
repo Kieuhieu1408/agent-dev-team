@@ -4,7 +4,7 @@ import { poNode } from './nodes/po-node.js';
 import { architectNode } from './nodes/architect-node.js';
 import { devNode } from './nodes/dev-node.js';
 import { testerNode } from './nodes/tester-node.js';
-import { routeAfterTester } from './router.js';
+import { routeAfterArchitect, routeAfterTester } from './router.js';
 
 export function buildDevTeamGraph() {
   const workflow = new StateGraph(AgentStateAnnotation)
@@ -14,7 +14,10 @@ export function buildDevTeamGraph() {
     .addNode('tester', testerNode)
     .addEdge(START, 'po')
     .addEdge('po', 'architect')
-    .addEdge('architect', 'dev')
+    .addConditionalEdges('architect', (state: AgentState) => routeAfterArchitect(state), {
+      dev: 'dev',
+      __end__: END,
+    })
     .addEdge('dev', 'tester')
     .addConditionalEdges('tester', (state: AgentState) => routeAfterTester(state), {
       dev: 'dev',
