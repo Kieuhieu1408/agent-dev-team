@@ -1,6 +1,7 @@
 import { PTYManager } from './pty-manager.js';
 import { settings } from '../config/settings.js';
 import { Logger } from '../core/logger.js';
+import { TokenTracker } from '../core/token-tracker.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -83,6 +84,12 @@ export class DevWorker {
     try {
       const exitCode = await this.ptyManager.waitForExit(this.sessionName, 180000); // 3 min timeout
       const output = this.ptyManager.getSessionLogs(this.sessionName);
+
+      // Record DevWorker Claude CLI token usage
+      const promptTokens = Math.max(1, Math.round(prompt.length / 4));
+      const completionTokens = Math.max(1, Math.round(output.length / 4));
+      TokenTracker.getInstance().recordUsage(promptTokens, completionTokens, 'Claude CLI');
+
       return {
         success: exitCode === 0,
         output,

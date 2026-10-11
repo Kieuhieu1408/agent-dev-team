@@ -183,6 +183,8 @@ export function cliCompleter(line: string): [string[], string] {
       '/project',
       '/model',
       '/status',
+      '/tokens',
+      '/cost',
       '/tasks',
       '/logs',
       '/autoconfirm',

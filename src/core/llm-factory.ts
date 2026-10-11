@@ -1,5 +1,6 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { settings } from '../config/settings.js';
+import { TokenTracker } from './token-tracker.js';
 
 export class LLMFactory {
   public static createModel(customModel?: string): ChatOpenAI {
@@ -19,6 +20,7 @@ export class LLMFactory {
       modelName: customModel || config.model,
       temperature: 0.2,
       maxRetries: 2,
+      callbacks: [TokenTracker.getInstance().createCallbackHandler()],
     });
   }
 }

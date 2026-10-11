@@ -13,6 +13,7 @@ import { PTYManager } from './terminal/pty-manager.js';
 import { buildDevTeamGraph } from './graph/builder.js';
 import { HITL } from './core/hitl.js';
 import { cliCompleter, historyManager } from './core/completer.js';
+import { TokenTracker } from './core/token-tracker.js';
 
 let activeRl: readline.Interface | null = null;
 
@@ -67,8 +68,25 @@ function printStatus(): void {
     : chalk.blueBright(cfg.projectPath);
 
   console.log(`  • ${chalk.bold('Dự án (CWD):')}   ${projectDisplay}`);
+
+  const tracker = TokenTracker.getInstance();
+  const sessionMetrics = tracker.getSessionMetrics();
+  const sessionCost = tracker.calculateCost(sessionMetrics.promptTokens, sessionMetrics.completionTokens);
+  const pricing = tracker.getPricing();
+  const ctxUsed = sessionMetrics.totalTokens;
+  const ctxLimit = pricing.contextWindow;
+  const ctxPct = ((ctxUsed / ctxLimit) * 100).toFixed(2);
+
   console.log(
-    `  • ${chalk.bold('Context Window:')} ${chalk.green('✓ 1.0M tokens')} ${chalk.dim(`(Đầu ra: ${modelInfo ? modelInfo.output : '64k'} | Tình trạng: An toàn, không lo tràn context)`)}`
+    `  • ${chalk.bold('Token đã dùng:')}  ${chalk.bold.green(tracker.formatNumber(sessionMetrics.totalTokens))} tokens ` +
+      chalk.dim(`(${tracker.formatNumber(sessionMetrics.promptTokens)} prompt · ${tracker.formatNumber(sessionMetrics.completionTokens)} completion · ${sessionMetrics.callsCount} lượt gọi)`)
+  );
+  console.log(
+    `  • ${chalk.bold('Chi phí ước tính:')} ${chalk.bold.yellow(tracker.formatCost(sessionCost.costUSD, sessionCost.costVND))}`
+  );
+  console.log(
+    `  • ${chalk.bold('Context Window:')} ${chalk.green(`${tracker.formatTokensCompact(ctxUsed)} / ${tracker.formatTokensCompact(ctxLimit)} tokens`)} ` +
+      chalk.dim(`(${ctxPct}% đã dùng · Tình trạng: An toàn, không lo tràn context)`)
   );
   console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
 
@@ -119,6 +137,7 @@ function printHelp(): void {
   console.log(`  ${chalk.yellow('/model [tên_model]')}      : Đổi model (gemini [mặc định], claude-sonnet) hoặc xem danh sách`);
   console.log(`  ${chalk.yellow('/autoconfirm [on|off]')}   : Bật/tắt tự động duyệt (mặc định tắt: hỏi xác nhận HITL)`);
   console.log(`  ${chalk.yellow('/status')}                 : Xem cấu hình, model hiện tại, dự án và tiến độ`);
+  console.log(`  ${chalk.yellow('/tokens | /cost')}         : Xem footer thống kê chi tiết token đã dùng & ước tính chi phí`);
   console.log(`  ${chalk.yellow('/tasks')}                  : Xem danh sách task chi tiết`);
   console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test Runner)`);
   console.log(`\n${chalk.bold.cyan('💻 LỆNH TERMINAL TRỰC TIẾP (DIRECT SHELL COMMANDS):')}`);
@@ -166,6 +185,7 @@ async function runFeatureDev(intent: string): Promise<void> {
   }
 
   isExecuting = true;
+  TokenTracker.getInstance().startTurn();
 
   try {
     const graph = buildDevTeamGraph();
@@ -195,6 +215,7 @@ async function runFeatureDev(intent: string): Promise<void> {
     Logger.error(`Lỗi trong quá trình điều phối: ${err.message}`);
   } finally {
     isExecuting = false;
+    TokenTracker.getInstance().printFooter();
   }
 }
 
@@ -490,6 +511,8 @@ function isCommandKeyword(token: string): boolean {
     'model',
     'autoconfirm',
     'status',
+    'tokens', 'token',
+    'cost', 'estimate',
     'tasks',
     'logs',
     'run',
@@ -568,6 +591,17 @@ export async function processCommandLine(line: string): Promise<boolean> {
   // Status
   if (normalizedCmd === 'status') {
     printStatus();
+    return true;
+  }
+
+  // Tokens / Cost / Estimate
+  if (
+    normalizedCmd === 'tokens' ||
+    normalizedCmd === 'token' ||
+    normalizedCmd === 'cost' ||
+    normalizedCmd === 'estimate'
+  ) {
+    TokenTracker.getInstance().printFooter();
     return true;
   }
 
@@ -841,6 +875,12 @@ async function main() {
   if (first === 'status') {
     Logger.banner();
     printStatus();
+    return;
+  }
+
+  if (first === 'tokens' || first === 'cost') {
+    Logger.banner();
+    TokenTracker.getInstance().printFooter();
     return;
   }
 
