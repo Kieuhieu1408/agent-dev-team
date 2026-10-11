@@ -39,16 +39,40 @@ export class Logger {
     console.log(`${chalk.red('✖')} ${chalk.bold.red(message)}`);
   }
 
+  public static formatTerminalMarkdown(text: string): string {
+    let formatted = text;
+
+    // Headers: ### Title -> bold yellow
+    formatted = formatted.replace(/^###\s+(.*)$/gm, (_, title) => chalk.bold.yellow(`\n📌 ${title}`));
+    formatted = formatted.replace(/^##\s+(.*)$/gm, (_, title) => chalk.bold.cyan(`\n🔹 ${title}`));
+    formatted = formatted.replace(/^#\s+(.*)$/gm, (_, title) => chalk.bold.magenta(`\n🚀 ${title}`));
+
+    // Bold: **text** or __text__ -> chalk.bold.white
+    formatted = formatted.replace(/\*\*(.*?)\*\*/g, (_, content) => chalk.bold.white(content));
+    formatted = formatted.replace(/__(.*?)__/g, (_, content) => chalk.bold.white(content));
+
+    // Inline code: `code` -> chalk.cyan
+    formatted = formatted.replace(/`([^`]+)`/g, (_, code) => chalk.cyan(code));
+
+    // List bullets: * or - at start of line -> •
+    formatted = formatted.replace(/^(\s*)[*-]\s+/gm, '$1• ');
+
+    return formatted;
+  }
+
   public static agentMessage(agent: string, message: string): void {
     const badges: Record<string, string> = {
       PO: chalk.bgBlue.bold.white(' 📋 Product Owner '),
       Architect: chalk.bgMagenta.bold.white(' 🏛️  Architect   '),
       Dev: chalk.bgCyan.bold.black(' 💻 Dev Worker   '),
       Tester: chalk.bgYellow.bold.black(' 🧪 Test Runner  '),
+      Explorer: chalk.bgBlueBright.bold.white(' 🔍 Explorer     '),
+      Supervisor: chalk.bgCyanBright.bold.black(' 🏛️  Supervisor   '),
       Orchestrator: chalk.bgGreen.bold.black(' ⚡ Orchestrator '),
     };
     const badge = badges[agent] || chalk.bgGray.bold.white(` [${agent}] `);
-    console.log(`\n${badge} ${chalk.white(message)}`);
+    const rendered = Logger.formatTerminalMarkdown(message);
+    console.log(`\n${badge} ${rendered}`);
   }
 
   public static ptyOutput(terminalName: string, data: string): void {
