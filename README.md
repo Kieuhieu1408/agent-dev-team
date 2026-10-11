@@ -148,6 +148,7 @@ devteam
 | `/logs` | `/logs` | Xem log real-time từ các terminal chạy ngầm (Claude CLI & Test Runner) |
 | `/run` | `/run <yêu cầu>` | Khởi chạy vòng lặp phát triển tính năng tự động khép kín |
 | `<prompt>` | `<yêu cầu tính năng>` | Gõ trực tiếp yêu cầu bất kỳ tại prompt để bắt đầu dev tính năng |
+| `stop` / `/stop` | `stop` | Dừng an toàn tất cả terminal chạy ngầm và lưu checkpoint trạng thái |
 | `/help` | `/help` | Hiển thị bảng hướng dẫn cú pháp và thông tin model |
 | `/exit` / `/quit` | `/exit` | Dừng an toàn tất cả terminal chạy ngầm và thoát chương trình |
 

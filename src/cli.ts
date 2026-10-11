@@ -61,6 +61,7 @@ function printHelp(): void {
   console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test Runner)`);
   console.log(`  ${chalk.yellow('/run <yêu cầu>')}          : Chạy workflow phát triển tính năng`);
   console.log(`  ${chalk.yellow('<yêu cầu tính năng>')}     : Gõ trực tiếp yêu cầu bất kỳ để dev tính năng`);
+  console.log(`  ${chalk.yellow('stop | /stop')}            : Dừng an toàn các terminal chạy ngầm và lưu checkpoint`);
   console.log(`  ${chalk.yellow('/exit | /quit')}           : Thoát khỏi chương trình`);
 
   console.log(`\n${chalk.bold.cyan('⚙️  CẤU HÌNH FILE (CONFIG FILE):')}`);
@@ -133,6 +134,7 @@ function isCommandKeyword(token: string): boolean {
     '/logs', 'logs',
     '/run', 'run',
     '/help', 'help',
+    '/stop', 'stop',
     '/exit', 'exit', '/quit', 'quit',
     'cat', 'config', '/config'
   ].includes(t);
@@ -143,6 +145,17 @@ export async function processCommandLine(line: string): Promise<boolean> {
   if (!trimmed) return true;
 
   const lower = trimmed.toLowerCase();
+
+  // Stop
+  if (lower === '/stop' || lower === 'stop') {
+    PTYManager.getInstance().killAll();
+    const cfg = settings.get();
+    const stateMgr = new StateManager(cfg.projectPath);
+    stateMgr.pause();
+    Logger.success('Đã dừng an toàn tất cả các tiến trình terminal ngầm.');
+    Logger.info(`Đã lưu checkpoint trạng thái tại: ${chalk.bold(path.join(cfg.projectPath, '.devteam/MASTER_PLAN.json'))}`);
+    return true;
+  }
 
   // Exit
   if (lower === '/exit' || lower === 'exit' || lower === '/quit' || lower === 'quit') {
@@ -379,6 +392,17 @@ async function main() {
   if (first === 'logs') {
     const logs = PTYManager.getInstance().getAllLogs();
     console.log(logs);
+    return;
+  }
+
+  if (first === 'stop') {
+    Logger.banner();
+    PTYManager.getInstance().killAll();
+    const cfg = settings.get();
+    const stateMgr = new StateManager(cfg.projectPath);
+    stateMgr.pause();
+    Logger.success('Đã dừng an toàn tất cả các tiến trình terminal ngầm.');
+    Logger.info(`Đã lưu checkpoint trạng thái tại: ${path.join(cfg.projectPath, '.devteam/MASTER_PLAN.json')}`);
     return;
   }
 

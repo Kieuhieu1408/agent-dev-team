@@ -199,4 +199,16 @@ ${
     this.saveState();
     return next;
   }
+
+  public pause(): void {
+    if (this.plan.currentPhase !== 'DONE' && this.plan.currentPhase !== 'IDLE') {
+      this.plan.currentPhase = 'IDLE';
+      const cur = this.getCurrentTask();
+      if (cur && (cur.status === 'IN_PROGRESS' || cur.status === 'TESTING' || cur.status === 'SELF_HEALING')) {
+        cur.status = 'TODO';
+        this.writeTaskMarkdown(cur);
+      }
+      this.saveState();
+    }
+  }
 }
