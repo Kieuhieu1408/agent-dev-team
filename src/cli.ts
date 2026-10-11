@@ -107,23 +107,13 @@ async function runFeatureDev(intent: string): Promise<void> {
     return;
   }
 
-  if (settings.isHomeDirectory()) {
-    Logger.error(`⛔ Không thể phát triển tính năng trực tiếp trên thư mục cá nhân (${cfg.projectPath})!`);
-    console.log(chalk.yellow('\n👉 Hãy mở/chỉ định thư mục dự án bằng lệnh:'));
-    console.log(chalk.bold.cyan('   /project <đường_dẫn>') + chalk.dim(' (Ví dụ: /project desktop/du-an-1)\n'));
-    return;
-  }
-
   isExecuting = true;
-  Logger.divider();
-  Logger.info(`Bắt đầu phát triển tính năng cho dự án: ${chalk.bold.blueBright(cfg.projectPath)}`);
-  Logger.info(`Mục tiêu: "${chalk.bold.white(intent)}"`);
-  Logger.divider();
 
   try {
     const graph = buildDevTeamGraph();
     const result = await graph.invoke({
       intent,
+      requestType: 'DEV',
       projectPath: cfg.projectPath,
       currentPhase: 'IDLE',
       tasks: [],
@@ -132,15 +122,17 @@ async function runFeatureDev(intent: string): Promise<void> {
       messages: [],
     });
 
-    Logger.divider();
-    if (result.isComplete && result.currentPhase === 'DONE' && !result.error) {
-      Logger.success('🎉 HOÀN TẤT TÍNH NĂNG VÀ TOÀN BỘ KIỂM THỬ ĐÃ ĐƯỢC XÁC THỰC!');
-    } else if (result.error) {
-      Logger.error(`Quy trình dừng lại với thông báo: ${result.error}`);
-    } else {
-      Logger.warn(`Trạng thái hiện tại: ${result.currentPhase}`);
+    if (result.requestType === 'DEV') {
+      Logger.divider();
+      if (result.isComplete && result.currentPhase === 'DONE' && !result.error) {
+        Logger.success('🎉 HOÀN TẤT TÍNH NĂNG VÀ TOÀN BỘ KIỂM THỬ ĐÃ ĐƯỢC XÁC THỰC!');
+      } else if (result.error) {
+        Logger.error(`Quy trình dừng lại với thông báo: ${result.error}`);
+      } else {
+        Logger.warn(`Trạng thái hiện tại: ${result.currentPhase}`);
+      }
+      Logger.divider();
     }
-    Logger.divider();
   } catch (err: any) {
     Logger.error(`Lỗi trong quá trình điều phối: ${err.message}`);
   } finally {
@@ -401,10 +393,8 @@ export async function processCommandLine(line: string): Promise<boolean> {
     return true;
   }
 
-  // If user entered text that is neither a recognized command nor 'run ...', inform clearly
-  console.log(chalk.yellow(`\n⚠️  Không nhận diện được lệnh: "${trimmed}"`));
-  console.log(chalk.dim('  • Hệ thống đang ở chế độ Cài đặt (Settings Mode). Gõ /help để xem trợ giúp.'));
-  console.log(chalk.cyan(`  • Để BẮT ĐẦU PHÁT TRIỂN TÍNH NĂNG, vui lòng gõ: ${chalk.bold(`run ${trimmed}`)}\n`));
+  // Any natural language text is handled by the AI Multi-Agent Orchestrator
+  await runFeatureDev(trimmed);
   return true;
 }
 

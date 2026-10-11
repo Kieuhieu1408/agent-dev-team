@@ -3,9 +3,22 @@ import { LLMFactory } from '../../core/llm-factory.js';
 import { StateManager } from '../../core/state-manager.js';
 import { FileSystemTool } from '../../tools/file-system.js';
 import { Logger } from '../../core/logger.js';
+import { settings } from '../../config/settings.js';
+import chalk from 'chalk';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 
 export async function poNode(state: AgentState): Promise<Partial<AgentState>> {
+  if (settings.isHomeDirectory()) {
+    Logger.error(`⛔ Không thể phát triển tính năng trực tiếp trên thư mục cá nhân (~ / ${state.projectPath})!`);
+    console.log(chalk.yellow('\n👉 Hãy mở/chỉ định thư mục dự án bằng lệnh:'));
+    console.log(chalk.bold.cyan('   /project <đường_dẫn>') + chalk.dim(' (Ví dụ: /project desktop/du-an-1)\n'));
+    return {
+      isComplete: true,
+      currentPhase: 'IDLE',
+      error: 'Vui lòng chọn thư mục dự án qua lệnh /project trước khi phát triển tính năng.',
+    };
+  }
+
   Logger.agentMessage('PO', `Phân tích yêu cầu nghiệp vụ: "${state.intent}"`);
 
   const stateManager = new StateManager(state.projectPath);
