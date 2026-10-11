@@ -175,6 +175,26 @@ export class PTYManager extends EventEmitter {
     return res;
   }
 
+  public getActiveSessions(): Array<{
+    name: string;
+    pid: number;
+    command: string;
+    args: string[];
+    cwd: string;
+    isAlive: boolean;
+    logsCount: number;
+  }> {
+    return Array.from(this.sessions.values()).map((s) => ({
+      name: s.name,
+      pid: s.ptyProcess.pid,
+      command: s.command,
+      args: s.args,
+      cwd: s.cwd,
+      isAlive: s.isAlive,
+      logsCount: s.logs.length,
+    }));
+  }
+
   public async waitForExit(name: string, timeoutMs: number = 120000): Promise<number> {
     const session = this.sessions.get(name);
     if (!session) {

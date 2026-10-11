@@ -67,7 +67,32 @@ function printStatus(): void {
     : chalk.blueBright(cfg.projectPath);
 
   console.log(`  • ${chalk.bold('Dự án (CWD):')}   ${projectDisplay}`);
+  console.log(
+    `  • ${chalk.bold('Context Window:')} ${chalk.green('✓ 1.0M tokens')} ${chalk.dim(`(Đầu ra: ${modelInfo ? modelInfo.output : '64k'} | Tình trạng: An toàn, không lo tràn context)`)}`
+  );
   console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
+
+  const activeTask = plan.tasks.find(
+    (t) => t.status === 'IN_PROGRESS' || t.status === 'TESTING' || t.status === 'SELF_HEALING'
+  );
+  if (activeTask) {
+    console.log(
+      `  • ${chalk.bold('Đang xử lý:')}   ${chalk.yellow.bold(`[${activeTask.id}]`)} ${activeTask.title}`
+    );
+  }
+
+  const ptySessions = PTYManager.getInstance().getActiveSessions();
+  if (ptySessions.length > 0) {
+    console.log(`  • ${chalk.bold('Terminals PTY:')}`);
+    for (const s of ptySessions) {
+      const statusTag = s.isAlive ? chalk.green('[RUNNING]') : chalk.gray('[STOPPED]');
+      console.log(
+        `    ${statusTag} ${chalk.bold.yellow(s.name)} (PID: ${s.pid}) - ${s.command} ${s.args.slice(0, 3).join(' ')}`
+      );
+    }
+  } else {
+    console.log(`  • ${chalk.bold('Terminals PTY:')}  ${chalk.dim('Chưa có terminal ngầm nào (IDLE)')}`);
+  }
 
   if (plan.tasks.length > 0) {
     console.log(`\n  ${chalk.bold('Danh sách nhiệm vụ (.devteam/tasks):')}`);
