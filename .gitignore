@@ -6,3 +6,5 @@ dist/
 docs/LEARN.md
 .DS_Store
 **/.DS_Store
+
+data/
