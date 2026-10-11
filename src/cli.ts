@@ -4,12 +4,34 @@ import readline from 'readline';
 import chalk from 'chalk';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
+import { spawnSync } from 'child_process';
 import { settings, SUPPORTED_MODELS } from './config/settings.js';
 import { Logger } from './core/logger.js';
 import { StateManager } from './core/state-manager.js';
 import { PTYManager } from './terminal/pty-manager.js';
 import { buildDevTeamGraph } from './graph/builder.js';
 import { HITL } from './core/hitl.js';
+
+let activeRl: readline.Interface | null = null;
+
+export function getPromptString(): string {
+  const currentPath = settings.get().projectPath;
+  const home = os.homedir();
+  let displayPath = currentPath;
+  if (currentPath === home) {
+    displayPath = '~';
+  } else if (currentPath.startsWith(home)) {
+    displayPath = '~' + currentPath.slice(home.length);
+  }
+  return chalk.cyan.bold('devteam') + chalk.dim(` [${displayPath}]`) + chalk.cyan.bold('> ');
+}
+
+export function updatePrompt(): void {
+  if (activeRl) {
+    activeRl.setPrompt(getPromptString());
+  }
+}
 
 function printStatus(): void {
   const cfg = settings.get();
@@ -73,8 +95,17 @@ function printHelp(): void {
   console.log(`  ${chalk.yellow('/status')}                 : Xem cấu hình, model hiện tại, dự án và tiến độ`);
   console.log(`  ${chalk.yellow('/tasks')}                  : Xem danh sách task chi tiết`);
   console.log(`  ${chalk.yellow('/logs')}                   : Xem logs từ Terminal chạy ngầm (Claude CLI & Test Runner)`);
-  console.log(`  ${chalk.yellow('/run <yêu cầu>')}          : Chạy workflow phát triển tính năng`);
-  console.log(`  ${chalk.yellow('<yêu cầu tính năng>')}     : Gõ trực tiếp yêu cầu bất kỳ để dev tính năng`);
+  console.log(`\n${chalk.bold.cyan('💻 LỆNH TERMINAL TRỰC TIẾP (DIRECT SHELL COMMANDS):')}`);
+  console.log(`  ${chalk.yellow('cd <thư_mục>')}            : Di chuyển thư mục (ví dụ: cd du-an-1, cd ~, cd ..)`);
+  console.log(`  ${chalk.yellow('pwd')}                     : Xem thư mục làm việc hiện tại`);
+  console.log(`  ${chalk.yellow('ls, cat, git, npm, ...')}  : Chạy trực tiếp bất kỳ lệnh shell nào trên dự án`);
+  console.log(`  ${chalk.yellow('!<lệnh> | $<lệnh>')}       : Thực thi lệnh shell cưỡng bức`);
+
+  console.log(`\n${chalk.bold.cyan('🤖 ĐIỀU PHỐI AI (MULTI-AGENT ORCHESTRATION):')}`);
+  console.log(`  ${chalk.yellow('<chào hỏi / chém gió>')}   : Trò chuyện xã giao với DevTeam AI (ví dụ: hello, bạn là ai)`);
+  console.log(`  ${chalk.yellow('<tìm hiểu dự án>')}        : Khảo sát kiến trúc (ví dụ: dự án này có gì, tech stack là gì)`);
+  console.log(`  ${chalk.yellow('<yêu cầu tính năng>')}     : Tự động phân tích PO -> Architect -> Xác nhận -> Dev -> Test`);
+  console.log(`  ${chalk.yellow('/run <yêu cầu>')}          : Chạy workflow phát triển tính năng tường minh`);
   console.log(`  ${chalk.yellow('stop | /stop')}            : Dừng an toàn các terminal chạy ngầm và lưu checkpoint`);
   console.log(`  ${chalk.yellow('/exit | /quit')}           : Thoát khỏi chương trình`);
 
@@ -138,6 +169,199 @@ async function runFeatureDev(intent: string): Promise<void> {
   } finally {
     isExecuting = false;
   }
+}
+
+const SHELL_COMMAND_NAMES = new Set([
+  'ls', 'dir', 'll', 'pwd', 'cat', 'mkdir', 'rmdir', 'touch', 'rm', 'cp', 'mv',
+  'git', 'npm', 'npx', 'yarn', 'pnpm', 'bun', 'node', 'python', 'python3',
+  'pip', 'pip3', 'pytest', 'cargo', 'go', 'make', 'curl', 'wget', 'docker',
+  'docker-compose', 'which', 'echo', 'chmod', 'chown', 'diff', 'grep', 'find',
+  'tree', 'head', 'tail', 'sed', 'awk', 'tar', 'zip', 'unzip', 'ps', 'kill',
+  'env', 'export', 'code', 'nano', 'vim', 'vi', 'open', 'pbcopy', 'pbpaste',
+  'df', 'du', 'free', 'uname', 'whoami', 'history', 'wc', 'sort', 'uniq',
+  'less', 'more', 'source', 'sh', 'bash', 'zsh', 'clear'
+]);
+
+let previousDir: string | null = null;
+
+export function handleCd(rawArg: string): boolean {
+  const arg = rawArg.trim().replace(/^['"]|['"]$/g, '');
+  const currentProject = settings.get().projectPath;
+  const homeDir = os.homedir();
+
+  let targetPath = '';
+
+  if (!arg || arg === '~') {
+    targetPath = homeDir;
+  } else if (arg === '-') {
+    if (!previousDir) {
+      console.error(chalk.red('cd: OLDPWD not set'));
+      return false;
+    }
+    targetPath = previousDir;
+  } else if (arg === '..') {
+    targetPath = path.dirname(currentProject);
+  } else if (path.isAbsolute(arg)) {
+    targetPath = path.normalize(arg);
+  } else if (arg.startsWith('~/')) {
+    targetPath = path.normalize(path.join(homeDir, arg.slice(2)));
+  } else {
+    // Relative path resolution:
+    // 1. Try directly relative to current project path
+    const candidate1 = path.resolve(currentProject, arg);
+    if (fs.existsSync(candidate1)) {
+      targetPath = candidate1;
+    } else {
+      // 2. Try relative to user home directory
+      const candidate2 = path.resolve(homeDir, arg);
+      if (fs.existsSync(candidate2)) {
+        targetPath = candidate2;
+      } else {
+        // 3. Try inside ~/Desktop or ~/desktop
+        const candidate3 = path.resolve(homeDir, 'Desktop', arg);
+        const candidate3Lower = path.resolve(homeDir, 'desktop', arg);
+        if (fs.existsSync(candidate3)) {
+          targetPath = candidate3;
+        } else if (fs.existsSync(candidate3Lower)) {
+          targetPath = candidate3Lower;
+        } else {
+          // 4. Try inside ~/workspace
+          const candidate4 = path.resolve(homeDir, 'workspace', arg);
+          if (fs.existsSync(candidate4)) {
+            targetPath = candidate4;
+          } else {
+            console.error(chalk.red(`cd: no such file or directory: ${arg}`));
+            return false;
+          }
+        }
+      }
+    }
+  }
+
+  try {
+    const stat = fs.statSync(targetPath);
+    if (!stat.isDirectory()) {
+      console.error(chalk.red(`cd: not a directory: ${arg}`));
+      return false;
+    }
+
+    previousDir = currentProject;
+    settings.setProjectPath(targetPath);
+    try {
+      process.chdir(targetPath);
+    } catch {}
+
+    updatePrompt();
+    return true;
+  } catch (err: any) {
+    console.error(chalk.red(`cd: ${err.message}`));
+    return false;
+  }
+}
+
+export function runShellCommand(commandLine: string, cwd: string): boolean {
+  try {
+    const res = spawnSync(commandLine, {
+      shell: true,
+      cwd,
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        FORCE_COLOR: '1',
+      },
+    });
+    return res.status === 0;
+  } catch (err: any) {
+    console.error(chalk.red(`Lỗi thực thi lệnh: ${err.message}`));
+    return false;
+  }
+}
+
+export function isShellCommand(cmd: string): boolean {
+  const trimmed = cmd.trim();
+  if (!trimmed) return false;
+
+  // Explicit shell escapes
+  if (trimmed.startsWith('!') || trimmed.startsWith('$')) {
+    return true;
+  }
+
+  // Executable paths
+  if (trimmed.startsWith('./') || trimmed.startsWith('../')) {
+    return true;
+  }
+
+  // cd or pwd
+  if (trimmed === 'cd' || trimmed.startsWith('cd ') || trimmed === 'pwd' || trimmed.startsWith('pwd ')) {
+    return true;
+  }
+
+  // Extract first word
+  const firstWord = trimmed.split(/[\s|;&><]+/)[0].toLowerCase();
+  if (SHELL_COMMAND_NAMES.has(firstWord)) {
+    // Edge case: English natural language using 'make' or 'find'
+    if (firstWord === 'make' && /\b(a|an|the|me|new|component|function|page|feature)\b/i.test(trimmed)) {
+      return false;
+    }
+    if (firstWord === 'find' && /\b(all|the|my|errors|bugs|issues|problems|function|classes|out)\b/i.test(trimmed)) {
+      return false;
+    }
+    return true;
+  }
+
+  // Compound commands
+  if (trimmed.includes('&&') || trimmed.includes(';')) {
+    const firstPart = trimmed.split(/&&|;/)[0].trim();
+    if (isShellCommand(firstPart)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function executeShellPipeline(rawLine: string): boolean {
+  let line = rawLine.trim();
+  if (line.startsWith('!') || line.startsWith('$')) {
+    line = line.slice(1).trim();
+  }
+
+  if (line === 'clear') {
+    console.clear();
+    return true;
+  }
+
+  if (line === 'pwd') {
+    console.log(settings.get().projectPath);
+    return true;
+  }
+
+  if (line === 'cd' || line.startsWith('cd ')) {
+    handleCd(line.slice(2).trim());
+    return true;
+  }
+
+  if (line.includes('&&') || line.includes(';')) {
+    const separator = line.includes('&&') ? '&&' : ';';
+    const parts = line.split(separator);
+    for (const part of parts) {
+      const sub = part.trim();
+      if (!sub) continue;
+      if (sub === 'cd' || sub.startsWith('cd ')) {
+        const ok = handleCd(sub.slice(2).trim());
+        if (!ok && separator === '&&') return true;
+      } else if (sub === 'pwd') {
+        console.log(settings.get().projectPath);
+      } else {
+        const ok = runShellCommand(sub, settings.get().projectPath);
+        if (!ok && separator === '&&') return true;
+      }
+    }
+    return true;
+  }
+
+  runShellCommand(line, settings.get().projectPath);
+  return true;
 }
 
 function isCommandKeyword(token: string): boolean {
@@ -265,8 +489,8 @@ export async function processCommandLine(line: string): Promise<boolean> {
     return true;
   }
 
-  // Cat or Config
-  if (normalizedCmd === 'config' || lower.startsWith('cat ')) {
+  // Config
+  if (normalizedCmd === 'config' || trimmed === 'cat config' || trimmed === 'cat config.json') {
     const cfg = settings.get();
     console.log(chalk.bold.cyan(`\n📄 Cấu hình hiện tại (${cfg.configFilePath}):`));
     try {
@@ -347,6 +571,7 @@ export async function processCommandLine(line: string): Promise<boolean> {
       const rawPath = tokens[i + 1];
       if (rawPath && !isCommandKeyword(rawPath)) {
         const resolved = settings.setProjectPath(rawPath);
+        updatePrompt();
         Logger.success(`Đã mở dự án tại: ${chalk.bold.blueBright(resolved)}`);
         const summary = fs.readdirSync(resolved);
         Logger.info(`Số lượng file/thư mục: ${summary.length} (${summary.slice(0, 8).join(', ') || 'thư mục mới'})`);
@@ -393,6 +618,12 @@ export async function processCommandLine(line: string): Promise<boolean> {
     return true;
   }
 
+  // Shell Command Execution (Zero AI latency, runs directly on local project terminal)
+  if (isShellCommand(trimmed)) {
+    executeShellPipeline(trimmed);
+    return true;
+  }
+
   // Any natural language text is handled by the AI Multi-Agent Orchestrator
   await runFeatureDev(trimmed);
   return true;
@@ -406,14 +637,15 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
   console.log(
     chalk.dim('  Nhập lệnh slash (ví dụ: /provider 9router /api-key sk-... /project hieukq/desktop/du-an-1)')
   );
-  console.log(chalk.dim('  Hoặc gõ trực tiếp yêu cầu tính năng cần dev. Gõ /help để xem trợ giúp.\n'));
+  console.log(chalk.dim('  Hoặc cd du-an-1, ls, cat..., hoặc gõ trực tiếp yêu cầu dev. Gõ /help để xem trợ giúp.\n'));
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: chalk.cyan.bold('devteam> '),
+    prompt: getPromptString(),
   });
 
+  activeRl = rl;
   HITL.setInteractiveMode(true);
 
   rl.prompt();
@@ -428,6 +660,7 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
       const shouldContinue = await processCommandLine(line);
       if (!shouldContinue) {
         HITL.setInteractiveMode(false);
+        activeRl = null;
         rl.close();
         process.exit(0);
       }
@@ -443,6 +676,7 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
           const cont = await processCommandLine(nextLine);
           if (!cont) {
             HITL.setInteractiveMode(false);
+            activeRl = null;
             rl.close();
             process.exit(0);
           }
@@ -459,6 +693,7 @@ export async function startInteractiveCLI(showBanner: boolean = true): Promise<v
   });
 
   rl.on('close', () => {
+    activeRl = null;
     HITL.setInteractiveMode(false);
     PTYManager.getInstance().killAll();
     process.exit(0);
@@ -526,7 +761,16 @@ async function main() {
   await startInteractiveCLI(false);
 }
 
-main().catch((err) => {
-  Logger.error(`Lỗi khởi động: ${err.message}`);
-  process.exit(1);
-});
+const isDirectExecution =
+  process.argv[1] &&
+  (import.meta.url.endsWith(process.argv[1]) ||
+    process.argv[1].endsWith('devteam') ||
+    process.argv[1].endsWith('dist/cli.js') ||
+    process.argv[1].endsWith('src/cli.ts'));
+
+if (isDirectExecution) {
+  main().catch((err) => {
+    Logger.error(`Lỗi khởi động: ${err.message}`);
+    process.exit(1);
+  });
+}

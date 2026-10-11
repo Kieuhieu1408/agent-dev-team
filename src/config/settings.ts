@@ -228,6 +228,9 @@ class SettingsManager {
     }
     this.config.projectPath = resolved;
     process.env.TARGET_PROJECT_DIR = resolved;
+    try {
+      process.chdir(resolved);
+    } catch {}
     return resolved;
   }
 
@@ -266,9 +269,23 @@ class SettingsManager {
       target = path.join(homeDir, rest);
     }
 
-    // If still relative, resolve against cwd
+    // If still relative, resolve against current project path or cwd
     if (!path.isAbsolute(target)) {
-      target = path.resolve(process.cwd(), target);
+      const baseDir = this.config ? this.config.projectPath : process.cwd();
+      const fromBase = path.resolve(baseDir, target);
+      if (fs.existsSync(fromBase)) {
+        target = fromBase;
+      } else {
+        const fromDesktop = path.resolve(homeDir, 'Desktop', target);
+        const fromDesktopLower = path.resolve(homeDir, 'desktop', target);
+        if (fs.existsSync(fromDesktop)) {
+          target = fromDesktop;
+        } else if (fs.existsSync(fromDesktopLower)) {
+          target = fromDesktopLower;
+        } else {
+          target = fromBase;
+        }
+      }
     }
 
     return path.normalize(target);
