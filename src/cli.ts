@@ -125,7 +125,7 @@ function printStatus(): void {
   } else {
     console.log(chalk.dim('  (Chưa có nhiệm vụ nào. Nhập yêu cầu để bắt đầu phân tích)'));
   }
-  Logger.divider();
+  TokenTracker.getInstance().printFooter();
 }
 
 function printHelp(): void {
@@ -209,7 +209,6 @@ async function runFeatureDev(intent: string): Promise<void> {
       } else {
         Logger.warn(`Trạng thái hiện tại: ${result.currentPhase}`);
       }
-      Logger.divider();
     }
   } catch (err: any) {
     Logger.error(`Lỗi trong quá trình điều phối: ${err.message}`);
@@ -601,7 +600,7 @@ export async function processCommandLine(line: string): Promise<boolean> {
     normalizedCmd === 'cost' ||
     normalizedCmd === 'estimate'
   ) {
-    TokenTracker.getInstance().printFooter();
+    TokenTracker.getInstance().printDetailedReport();
     return true;
   }
 

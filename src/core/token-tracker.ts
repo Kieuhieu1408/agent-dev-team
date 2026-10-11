@@ -270,72 +270,61 @@ export class TokenTracker {
     }
   }
 
-  public renderFooter(compact: boolean = false): string {
-    const turn = this.turnMetrics;
+  public renderFooter(): string {
     const session = this.sessionMetrics;
+    const sessionCost = this.calculateCost(session.promptTokens, session.completionTokens);
+
+    let costStr = '$0.00';
+    if (sessionCost.costUSD > 0) {
+      if (sessionCost.costUSD < 0.0001) {
+        costStr = '<$0.0001';
+      } else if (sessionCost.costUSD < 0.01) {
+        costStr = `$${sessionCost.costUSD.toFixed(4)}`;
+      } else if (sessionCost.costUSD < 1) {
+        costStr = `$${sessionCost.costUSD.toFixed(3)}`;
+      } else {
+        costStr = `$${sessionCost.costUSD.toFixed(2)}`;
+      }
+    }
+
+    const tokenCount = this.formatNumber(session.totalTokens);
+    const plainBadge = `token: ${tokenCount}  estimate: ${costStr}`;
+    const styledBadge = `${chalk.dim('token:')} ${chalk.cyan(tokenCount)}  ${chalk.dim('estimate:')} ${chalk.yellow(costStr)}`;
+
+    const width = process.stdout.columns || 80;
+    const dashCount = Math.max(5, width - plainBadge.length - 2);
+    const leftLine = chalk.dim('─'.repeat(dashCount));
+
+    return `${leftLine} ${styledBadge}`;
+  }
+
+  public printFooter(): void {
+    console.log(this.renderFooter());
+  }
+
+  public printDetailedReport(): void {
+    const session = this.sessionMetrics;
+    const sessionCost = this.calculateCost(session.promptTokens, session.completionTokens);
     const pricing = this.getPricing();
     const model = settings.get().model;
-
-    const sessionCost = this.calculateCost(session.promptTokens, session.completionTokens);
-    const turnCost = this.calculateCost(turn.promptTokens, turn.completionTokens);
-
     const contextUsed = session.totalTokens;
     const contextLimit = pricing.contextWindow;
     const contextPercent = ((contextUsed / contextLimit) * 100).toFixed(2);
     const contextDisplay = `${this.formatTokensCompact(contextUsed)} / ${this.formatTokensCompact(contextLimit)}`;
 
-    const divider = chalk.dim('─'.repeat(70));
-
-    if (compact) {
-      const costStr = sessionCost.costUSD > 0 ? `~$${sessionCost.costUSD.toFixed(4)}` : '$0.00';
-      return [
-        divider,
-        `⚡ ${chalk.bold.cyan('TOKENS:')} Lượt: ${chalk.yellow(this.formatNumber(turn.totalTokens))} | ` +
-          `Tổng: ${chalk.green(this.formatNumber(session.totalTokens))} | ` +
-          `Est: ${chalk.bold.yellow(costStr)} | ` +
-          `Ctx: ${chalk.magenta(contextPercent + '%')} (${contextDisplay})`,
-        divider,
-      ].join('\n');
-    }
-
-    const lines: string[] = [
-      divider,
-      chalk.bold.cyan('📊 TỔNG TOKEN & ƯỚC TÍNH (TOKEN USAGE & ESTIMATE FOOTER):'),
-    ];
-
-    if (turn.totalTokens > 0) {
-      lines.push(
-        `  • ${chalk.bold('Lượt hiện tại:')}   ${chalk.bold.yellow(this.formatNumber(turn.totalTokens))} tokens ` +
-          chalk.dim(`(${this.formatNumber(turn.promptTokens)} prompt · ${this.formatNumber(turn.completionTokens)} completion) `) +
-          chalk.dim(`| Est: ${turnCost.costUSD < 0.0001 ? '<$0.0001' : '$' + turnCost.costUSD.toFixed(4)}`)
-      );
-    } else {
-      lines.push(
-        `  • ${chalk.bold('Lượt hiện tại:')}   ${chalk.green('0 tokens')} ${chalk.dim('(Tối ưu Fast-Path Router, không tốn AI token)')}`
-      );
-    }
-
-    lines.push(
-      `  • ${chalk.bold('Cả phiên (Session):')} ${chalk.bold.green(this.formatNumber(session.totalTokens))} tokens ` +
-        chalk.dim(`(${this.formatNumber(session.promptTokens)} in · ${this.formatNumber(session.completionTokens)} out · ${session.callsCount} lượt gọi)`)
+    console.log(chalk.bold.cyan('\n📊 CHI TIẾT SỬ DỤNG TOKEN & CHI PHÍ:'));
+    console.log(
+      `  • ${chalk.bold('Token đã dùng:')}  ${chalk.bold.green(this.formatNumber(session.totalTokens))} tokens ` +
+        chalk.dim(`(${this.formatNumber(session.promptTokens)} prompt · ${this.formatNumber(session.completionTokens)} completion · ${session.callsCount} lượt gọi)`)
     );
-
-    lines.push(
-      `  • ${chalk.bold('Chi phí ước tính:')}   ${chalk.bold.yellow(this.formatCost(sessionCost.costUSD, sessionCost.costVND))} ` +
+    console.log(
+      `  • ${chalk.bold('Chi phí ước tính:')} ${chalk.bold.yellow(this.formatCost(sessionCost.costUSD, sessionCost.costVND))} ` +
         chalk.dim(`[Model: ${model}]`)
     );
-
-    lines.push(
-      `  • ${chalk.bold('Context Window:')}    ${chalk.green(contextDisplay + ' tokens')} ` +
-        chalk.dim(`(${contextPercent}% đã dùng · An toàn, không lo tràn)`)
+    console.log(
+      `  • ${chalk.bold('Context Window:')}   ${chalk.green(contextDisplay + ' tokens')} ` +
+        chalk.dim(`(${contextPercent}% đã dùng · An toàn)`)
     );
-
-    lines.push(divider);
-
-    return lines.join('\n');
-  }
-
-  public printFooter(compact: boolean = false): void {
-    console.log('\n' + this.renderFooter(compact));
+    console.log(this.renderFooter());
   }
 }
