@@ -22,7 +22,27 @@ export class TestRunner {
   }
 
   public detectTestCommand(cwd: string): { command: string; args: string[] } {
-    // 1. Node.js (package.json)
+    const files = fs.existsSync(cwd) ? fs.readdirSync(cwd) : [];
+
+    // 1. Python projects
+    const hasPytestConfig =
+      fs.existsSync(path.join(cwd, 'pytest.ini')) ||
+      fs.existsSync(path.join(cwd, 'pyproject.toml'));
+    const testDir = path.join(cwd, 'tests');
+    const testDirAlt = path.join(cwd, 'test');
+    const hasPythonTestFiles =
+      files.some((f) => (f.startsWith('test_') || f.endsWith('_test.py')) && f.endsWith('.py')) ||
+      (fs.existsSync(testDir) && fs.readdirSync(testDir).some((f) => f.endsWith('.py'))) ||
+      (fs.existsSync(testDirAlt) && fs.readdirSync(testDirAlt).some((f) => f.endsWith('.py')));
+
+    if (hasPytestConfig) {
+      return { command: 'pytest', args: ['-q'] };
+    }
+    if (hasPythonTestFiles) {
+      return { command: 'python3', args: ['-m', 'unittest', 'discover'] };
+    }
+
+    // 2. Node.js (package.json)
     const packageJsonPath = path.join(cwd, 'package.json');
     if (fs.existsSync(packageJsonPath)) {
       try {
@@ -39,26 +59,25 @@ export class TestRunner {
       }
     }
 
-    // Check for test files in project (Node built-in test runner)
-    const files = fs.existsSync(cwd) ? fs.readdirSync(cwd) : [];
-    const hasTestFiles =
-      files.some((f) => f.includes('test') || f.includes('spec')) ||
-      (fs.existsSync(path.join(cwd, 'test')) && fs.readdirSync(path.join(cwd, 'test')).length > 0) ||
-      (fs.existsSync(path.join(cwd, 'tests')) && fs.readdirSync(path.join(cwd, 'tests')).length > 0);
+    // Check for JS/TS test files in project (Node built-in test runner)
+    const hasJsTsTestFiles =
+      files.some((f) => (f.includes('test') || f.includes('spec')) && (f.endsWith('.js') || f.endsWith('.ts') || f.endsWith('.mjs'))) ||
+      (fs.existsSync(testDir) && fs.readdirSync(testDir).some((f) => f.endsWith('.js') || f.endsWith('.ts'))) ||
+      (fs.existsSync(testDirAlt) && fs.readdirSync(testDirAlt).some((f) => f.endsWith('.js') || f.endsWith('.ts')));
 
-    if (hasTestFiles) {
-      if (files.some((f) => f.endsWith('.ts'))) {
+    if (hasJsTsTestFiles) {
+      if (files.some((f) => f.endsWith('.ts')) || (fs.existsSync(testDir) && fs.readdirSync(testDir).some((f) => f.endsWith('.ts')))) {
         return { command: 'npx', args: ['tsx', '--test'] };
       }
       return { command: 'node', args: ['--test'] };
     }
 
-    // 2. Maven
+    // 3. Maven
     if (fs.existsSync(path.join(cwd, 'pom.xml'))) {
       return { command: 'mvn', args: ['test', '-B'] };
     }
 
-    // 3. Gradle
+    // 4. Gradle
     if (fs.existsSync(path.join(cwd, 'gradlew'))) {
       return { command: './gradlew', args: ['test'] };
     }
@@ -67,15 +86,6 @@ export class TestRunner {
       fs.existsSync(path.join(cwd, 'build.gradle.kts'))
     ) {
       return { command: 'gradle', args: ['test'] };
-    }
-
-    // 4. Python
-    if (
-      fs.existsSync(path.join(cwd, 'pytest.ini')) ||
-      fs.existsSync(path.join(cwd, 'pyproject.toml')) ||
-      fs.existsSync(path.join(cwd, 'tests'))
-    ) {
-      return { command: 'pytest', args: ['-q'] };
     }
 
     // 5. Rust
@@ -88,8 +98,19 @@ export class TestRunner {
       return { command: 'go', args: ['test', './...'] };
     }
 
-    // Default fallback to npm test
-    return { command: 'npm', args: ['test'] };
+    // 7. General fallback based on existing source files
+    if (fs.existsSync(packageJsonPath)) {
+      return { command: 'npm', args: ['test'] };
+    }
+    if (files.some((f) => f.endsWith('.py'))) {
+      return { command: 'python3', args: ['-m', 'unittest', 'discover'] };
+    }
+    if (files.some((f) => f.endsWith('.js') || f.endsWith('.mjs'))) {
+      return { command: 'node', args: ['--test'] };
+    }
+
+    // No test suite detected
+    return { command: '', args: [] };
   }
 
   public async runTests(
@@ -104,6 +125,17 @@ export class TestRunner {
     if (customCommand) {
       command = customCommand;
       args = customArgs || [];
+    }
+
+    if (!command) {
+      Logger.info(`ℹ Không tìm thấy bài kiểm thử tự động nào được thiết lập tại ${targetCwd}. Đánh dấu task thành công.`);
+      return {
+        success: true,
+        exitCode: 0,
+        output: 'Chưa có cấu hình bài kiểm thử (Không có test files hay test runner phù hợp).',
+        commandUsed: 'none',
+        bugReport: null,
+      };
     }
 
     const commandStr = `${command} ${args.join(' ')}`;

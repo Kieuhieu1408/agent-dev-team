@@ -186,6 +186,10 @@ class SettingsManager {
     return { ...this.config };
   }
 
+  public isHomeDirectory(): boolean {
+    return path.normalize(this.config.projectPath) === path.normalize(os.homedir());
+  }
+
   public setAutoConfirm(enabled: boolean): void {
     this.config.autoConfirm = enabled;
   }

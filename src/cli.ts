@@ -38,7 +38,12 @@ function printStatus(): void {
         : chalk.green('✓ BẬT (Xác nhận trước khi Dev & Test)')
     }`
   );
-  console.log(`  • ${chalk.bold('Dự án (CWD):')}   ${chalk.blueBright(cfg.projectPath)}`);
+  const isHome = settings.isHomeDirectory();
+  const projectDisplay = isHome
+    ? `${chalk.yellowBright(cfg.projectPath)} ${chalk.red.bold('⚠️ (Thư mục cá nhân ~ | Cần dùng /project để chọn dự án!)')}`
+    : chalk.blueBright(cfg.projectPath);
+
+  console.log(`  • ${chalk.bold('Dự án (CWD):')}   ${projectDisplay}`);
   console.log(`  • ${chalk.bold('Tiến trình:')}    ${chalk.magenta(plan.currentPhase)}`);
 
   if (plan.tasks.length > 0) {
@@ -102,6 +107,13 @@ async function runFeatureDev(intent: string): Promise<void> {
     return;
   }
 
+  if (settings.isHomeDirectory()) {
+    Logger.error(`⛔ Không thể phát triển tính năng trực tiếp trên thư mục cá nhân (${cfg.projectPath})!`);
+    console.log(chalk.yellow('\n👉 Hãy mở/chỉ định thư mục dự án bằng lệnh:'));
+    console.log(chalk.bold.cyan('   /project <đường_dẫn>') + chalk.dim(' (Ví dụ: /project desktop/du-an-1)\n'));
+    return;
+  }
+
   isExecuting = true;
   Logger.divider();
   Logger.info(`Bắt đầu phát triển tính năng cho dự án: ${chalk.bold.blueBright(cfg.projectPath)}`);
@@ -137,21 +149,21 @@ async function runFeatureDev(intent: string): Promise<void> {
 }
 
 function isCommandKeyword(token: string): boolean {
-  const t = token.toLowerCase();
+  const t = token.toLowerCase().replace(/^\/+/, '');
   return [
-    '/provider', 'provider',
-    '/api-key', 'api-key', '/apikey', 'apikey',
-    '/project', 'project',
-    '/model', 'model',
-    '/autoconfirm', 'autoconfirm',
-    '/status', 'status',
-    '/tasks', 'tasks',
-    '/logs', 'logs',
-    '/run', 'run',
-    '/help', 'help',
-    '/stop', 'stop',
-    '/exit', 'exit', '/quit', 'quit',
-    'cat', 'config', '/config'
+    'provider',
+    'api-key', 'apikey',
+    'project',
+    'model',
+    'autoconfirm',
+    'status',
+    'tasks',
+    'logs',
+    'run',
+    'help',
+    'stop',
+    'exit', 'quit', 'q', 'ẽit',
+    'cat', 'config'
   ].includes(t);
 }
 
@@ -160,27 +172,40 @@ export async function processCommandLine(line: string): Promise<boolean> {
   if (!trimmed) return true;
 
   const lower = trimmed.toLowerCase();
+  const normalizedCmd = lower.replace(/^\/+/, '');
 
-  // Stop
-  if (lower === '/stop' || lower === 'stop') {
+  // Stop - always available even while executing
+  if (normalizedCmd === 'stop') {
     PTYManager.getInstance().killAll();
     const cfg = settings.get();
     const stateMgr = new StateManager(cfg.projectPath);
     stateMgr.pause();
+    isExecuting = false;
     Logger.success('Đã dừng an toàn tất cả các tiến trình terminal ngầm.');
     Logger.info(`Đã lưu checkpoint trạng thái tại: ${chalk.bold(path.join(cfg.projectPath, '.devteam/MASTER_PLAN.json'))}`);
     return true;
   }
 
-  // Exit
-  if (lower === '/exit' || lower === 'exit' || lower === '/quit' || lower === 'quit') {
+  // Concurrency guard: if already executing, prevent running other commands
+  if (isExecuting) {
+    Logger.warn('⚠️  Một quy trình phát triển tính năng đang chạy. Hãy gõ `stop` nếu bạn muốn dừng lại.');
+    return true;
+  }
+
+  // Exit / Quit (supports /exit, exit, quit, q, and Vietnamese typos like //ẽit)
+  if (
+    normalizedCmd === 'exit' ||
+    normalizedCmd === 'quit' ||
+    normalizedCmd === 'q' ||
+    normalizedCmd === 'ẽit'
+  ) {
     PTYManager.getInstance().killAll();
     console.log(chalk.cyan('Tạm biệt! Hẹn gặp lại. 👋'));
     return false;
   }
 
   // Autoconfirm
-  if (lower === 'autoconfirm' || lower === '/autoconfirm' || lower.startsWith('autoconfirm ') || lower.startsWith('/autoconfirm ')) {
+  if (normalizedCmd === 'autoconfirm' || normalizedCmd.startsWith('autoconfirm ')) {
     const parts = trimmed.split(/\s+/);
     if (parts.length > 1) {
       const mode = parts[1].toLowerCase();
@@ -202,19 +227,19 @@ export async function processCommandLine(line: string): Promise<boolean> {
   }
 
   // Help
-  if (lower === '/help' || lower === 'help') {
+  if (normalizedCmd === 'help') {
     printHelp();
     return true;
   }
 
   // Status
-  if (lower === '/status' || lower === 'status') {
+  if (normalizedCmd === 'status') {
     printStatus();
     return true;
   }
 
   // Tasks
-  if (lower === '/tasks' || lower === 'tasks') {
+  if (normalizedCmd === 'tasks') {
     const cfg = settings.get();
     const stateMgr = new StateManager(cfg.projectPath);
     const plan = stateMgr.getPlan();
@@ -234,7 +259,7 @@ export async function processCommandLine(line: string): Promise<boolean> {
   }
 
   // Logs
-  if (lower === '/logs' || lower === 'logs') {
+  if (normalizedCmd === 'logs') {
     const logs = PTYManager.getInstance().getAllLogs();
     const keys = Object.keys(logs);
     if (keys.length === 0) {
@@ -249,7 +274,7 @@ export async function processCommandLine(line: string): Promise<boolean> {
   }
 
   // Cat or Config
-  if (lower === 'config' || lower === '/config' || lower.startsWith('cat ')) {
+  if (normalizedCmd === 'config' || lower.startsWith('cat ')) {
     const cfg = settings.get();
     console.log(chalk.bold.cyan(`\n📄 Cấu hình hiện tại (${cfg.configFilePath}):`));
     try {
@@ -282,9 +307,9 @@ export async function processCommandLine(line: string): Promise<boolean> {
 
   while (i < tokens.length) {
     const token = tokens[i];
-    const tokLower = token.toLowerCase();
+    const tokNorm = token.toLowerCase().replace(/^\/+/, '');
 
-    if (tokLower === '/provider' || tokLower === 'provider') {
+    if (tokNorm === 'provider') {
       const providerName = tokens[i + 1];
       if (providerName && !isCommandKeyword(providerName)) {
         const customUrl = tokens[i + 2] && !isCommandKeyword(tokens[i + 2]) ? tokens[i + 2] : undefined;
@@ -294,13 +319,16 @@ export async function processCommandLine(line: string): Promise<boolean> {
         handledAny = true;
         continue;
       } else {
-        Logger.warn('Cú pháp: provider <tên_provider> [url_tùy_chọn]');
+        const cur = settings.get();
+        Logger.info(`Provider hiện tại: ${chalk.bold.green(cur.provider)} (${cur.providerUrl})`);
+        console.log(chalk.dim('  Cú pháp đổi provider: provider <tên> [url_tùy_chọn]\n'));
         i++;
+        handledAny = true;
         continue;
       }
     }
 
-    if (tokLower === '/api-key' || tokLower === 'api-key' || tokLower === '/apikey' || tokLower === 'apikey') {
+    if (tokNorm === 'api-key' || tokNorm === 'apikey') {
       const key = tokens[i + 1];
       if (key && !isCommandKeyword(key)) {
         settings.setApiKey(key);
@@ -310,15 +338,21 @@ export async function processCommandLine(line: string): Promise<boolean> {
         handledAny = true;
         continue;
       } else {
-        Logger.warn('Cú pháp: api-key sk-...');
+        const curKey = settings.get().apiKey;
+        if (curKey) {
+          const masked = curKey.length > 8 ? curKey.slice(0, 6) + '...' + curKey.slice(-4) : '***';
+          Logger.info(`API Key hiện tại: ${chalk.bold.green(masked)}`);
+        } else {
+          Logger.warn('Chưa cấu hình API Key. Cú pháp: api-key sk-...');
+        }
         i++;
+        handledAny = true;
         continue;
       }
     }
 
-    if (tokLower === '/project' || tokLower === 'project') {
+    if (tokNorm === 'project') {
       const rawPath = tokens[i + 1];
-      // Only reject if rawPath is an actual command keyword, NOT because it starts with '/'
       if (rawPath && !isCommandKeyword(rawPath)) {
         const resolved = settings.setProjectPath(rawPath);
         Logger.success(`Đã mở dự án tại: ${chalk.bold.blueBright(resolved)}`);
@@ -328,13 +362,16 @@ export async function processCommandLine(line: string): Promise<boolean> {
         handledAny = true;
         continue;
       } else {
-        Logger.warn('Cú pháp: project <đường_dẫn>');
+        const cur = settings.get();
+        Logger.info(`Dự án hiện tại: ${chalk.bold.blueBright(cur.projectPath)}`);
+        console.log(chalk.dim('  Cú pháp đổi dự án: project <đường_dẫn> (ví dụ: project desktop/du-an-1)\n'));
         i++;
+        handledAny = true;
         continue;
       }
     }
 
-    if (tokLower === '/model' || tokLower === 'model') {
+    if (tokNorm === 'model') {
       const modelName = tokens[i + 1];
       if (modelName && !isCommandKeyword(modelName)) {
         settings.setModel(modelName);

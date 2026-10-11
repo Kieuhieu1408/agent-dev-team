@@ -69,6 +69,12 @@ export class DevWorker {
         if (onProgress) {
           onProgress(chunk);
         } else {
+          if (
+            chunk.includes('[claude-code:unrecognized_model]') ||
+            chunk.includes("isn't described by this version's model catalog")
+          ) {
+            return;
+          }
           Logger.ptyOutput('Dev-Worker', chunk);
         }
       },
